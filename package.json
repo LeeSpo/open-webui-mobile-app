@@ -23,7 +23,7 @@
 		"mobile:sync": "npm run build && npx cap sync android",
 		"mobile:open": "npx cap open android",
 		"mobile:android": "npx cap run android",
-		"mobile:apk": "npm run mobile:sync && cd android && ./gradlew assembleDebug --no-daemon -I gradle/init.aliyun.gradle"
+		"mobile:apk": "npm run mobile:sync && cd android && ./gradlew assembleRelease --no-daemon -I gradle/init.aliyun.gradle"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "3.2.2",

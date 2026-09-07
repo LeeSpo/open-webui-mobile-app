@@ -36,17 +36,22 @@ npx cap open android
 `mobile:sync` runs `npm run build` (static SPA into `build/`) and copies it
 into the Android project. The Python backend is not packaged.
 
-Debug APK:
+Sideload APK (signed release, not debug):
 
 ```sh
 # JAVA_HOME should be JDK 17 or 21 (not 25)
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 npm run mobile:apk
 ```
 
-The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
+The APK is written to `android/app/build/outputs/apk/release/app-release.apk`.
 If Google Maven is unreachable, the build uses `android/gradle/init.aliyun.gradle`.
+
+Debug APKs (`assembleDebug`) set `android:debuggable=true` and often cannot be
+installed from a file manager, even after skipping Play Protect. Use the
+release APK for distribution. If a previous debug build is already installed,
+uninstall it first — the release keystore is different.
 
 Android Studio / Gradle need JDK 17 or 21. Newer JDKs (25+) fail Capacitor's Gradle 8.11 wrapper with `Unsupported class file major version`.
 
@@ -82,6 +87,7 @@ points:
 - New: `src/lib/runtime/`, `src/routes/setup/`, `android/`, `capacitor.config.ts`, `docs/mobile.md`
 - Small patches: `src/lib/constants.ts`, `src/routes/+layout.svelte`, `src/routes/auth/+page.svelte`, `src/routes/error/+page.svelte`, `src/lib/components/chat/Settings/About.svelte`, `package.json`
 - Optional server: `backend/open_webui/env.py`, `backend/open_webui/utils/oauth.py`
+- CI: keep `release-apk.yml`; leave upstream Docker/PyPI/release workflows as `.disabled`
 
 If upstream adds another `*_API_BASE_URL` in `constants.ts`, add it to
 `applyRuntimeBaseUrl()`.

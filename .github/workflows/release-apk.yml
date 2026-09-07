@@ -1,0 +1,156 @@
+# Build a sideloadable Android release APK.
+# Publishes to GitHub Releases on tags / tagged workflow_dispatch.
+name: Build & Release Android APK
+
+on:
+  push:
+    branches: [mobile-app]
+    tags:
+      - 'v*'
+      - 'mobile-v*'
+  pull_request:
+    branches: [mobile-app]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to publish (empty = artifact only)'
+        required: false
+        default: ''
+
+concurrency:
+  group: apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Resolve version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(jq -r '.version' package.json)"
+          NAME="$PKG_VERSION"
+          TAG=""
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+            NAME="$INPUT_TAG"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+            NAME="$REF_NAME"
+          fi
+
+          NAME="${NAME#mobile-}"
+          NAME="${NAME#v}"
+
+          CODE="$(NAME="$NAME" python3 - <<'PY'
+          import os, re
+          parts = [int(p) for p in re.findall(r'\d+', os.environ['NAME'])]
+          parts = (parts + [0, 0, 0, 0])[:4]
+          print(parts[0] * 1000000 + parts[1] * 10000 + parts[2] * 100 + parts[3])
+          PY
+          )"
+
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "code=${CODE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved versionName=${NAME} versionCode=${CODE} tag=${TAG}"
+
+      - name: Install dependencies
+        run: npm ci --force
+
+      - name: Build web application
+        run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build signed release APK
+        working-directory: android
+        env:
+          APP_VERSION_NAME: ${{ steps.version.outputs.name }}
+          APP_VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Prepare APK and checksum
+        id: prepare
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.name }}"
+          SRC="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$SRC"
+
+          mkdir -p release-assets
+          APK_NAME="open-webui-mobile-${VERSION}.apk"
+          cp "$SRC" "release-assets/${APK_NAME}"
+          (
+            cd release-assets
+            sha256sum "${APK_NAME}" > "${APK_NAME}.sha256"
+          )
+
+          APKSIGNER="$(ls -1d "$ANDROID_HOME"/build-tools/*/apksigner | sort | tail -1)"
+          "$APKSIGNER" verify --verbose "release-assets/${APK_NAME}"
+
+          echo "apk_name=${APK_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prepare.outputs.apk_name }}
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        if: steps.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" release-assets/* \
+              --title "$TAG" \
+              --generate-notes
+          fi
