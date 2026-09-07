@@ -58,6 +58,45 @@ function initNetworkProxyFromEnv() {
 	console.log(`Initialized network proxy "${preferedProxy}" from env`);
 }
 
+async function isPyodideReady() {
+	const force = process.argv.includes('--force') || Boolean(process.env.FORCE_PYODIDE_FETCH);
+	if (force) {
+		console.log('Force fetch enabled, re-downloading Pyodide packages...');
+		return false;
+	}
+
+	try {
+		const packageJson = JSON.parse(await readFile('package.json', 'utf-8'));
+		const pyodideVersion = packageJson.dependencies?.pyodide?.replace('^', '');
+		const pyodidePackageJson = JSON.parse(await readFile('static/pyodide/package.json', 'utf-8'));
+		const pyodidePackageVersion = pyodidePackageJson.version?.replace('^', '');
+
+		if (!pyodideVersion || pyodideVersion !== pyodidePackageVersion) {
+			console.log(`Pyodide version mismatch (${pyodidePackageVersion} vs ${pyodideVersion}), re-fetching...`);
+			return false;
+		}
+
+		await access('static/pyodide/pyodide-lock.json');
+		await access('static/pyodide/pyodide.asm.wasm');
+		await access('static/pyodide/python_stdlib.zip');
+
+		const lockData = JSON.parse(await readFile('static/pyodide/pyodide-lock.json', 'utf-8'));
+		if (!lockData?.packages) return false;
+
+		for (const pkg of pypiPackages) {
+			const normalizedName = pkg.replace(/-/g, '_');
+			if (!lockData.packages[normalizedName]) {
+				console.log(`Missing wheel ${pkg} in pyodide-lock.json, re-fetching...`);
+				return false;
+			}
+		}
+
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 async function downloadPackages() {
 	console.log('Setting up pyodide + micropip');
 
@@ -195,7 +234,14 @@ async function downloadPyPIWheels() {
 	console.log('Updated pyodide-lock.json with PyPI packages');
 }
 
+if (await isPyodideReady()) {
+	console.log('✓ Pyodide assets and Python wheels already exist in static/pyodide. Skipping fetch.');
+	console.log('  (Tip: use "npm run pyodide:fetch -- --force" if you ever need to re-download)');
+	process.exit(0);
+}
+
 initNetworkProxyFromEnv();
 await downloadPackages();
 await copyPyodide();
 await downloadPyPIWheels();
+

@@ -1251,7 +1251,7 @@
 
 		let backendConfig = null;
 		try {
-			backendConfig = await getBackendConfig();
+			backendConfig = await getBackendConfig(localStorage.token);
 			console.log('Backend config:', backendConfig);
 		} catch (error) {
 			if (error?.authRedirect) {
@@ -1300,7 +1300,7 @@
 					if (sessionUser) {
 						await user.set(sessionUser);
 						try {
-							await config.set(await getBackendConfig());
+							await config.set(await getBackendConfig(localStorage.token));
 						} catch (error) {
 							console.error('Error refreshing backend config:', error);
 						}
@@ -1432,7 +1432,7 @@
 
 {#if loaded}
 	{#if $isApp}
-		<div class="flex flex-row h-screen">
+		<div class="flex flex-row h-full min-h-0">
 			<AppSidebar />
 
 			<div class="w-full flex-1 max-w-[calc(100%-4.5rem)]">

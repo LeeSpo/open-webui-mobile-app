@@ -1447,15 +1447,25 @@ export const getUsage = async (token: string = '') => {
 	return res;
 };
 
-export const getBackendConfig = async () => {
+const backendConfigHeaders = (token: string = ''): Record<string, string> => {
+	const authToken =
+		token || (typeof localStorage !== 'undefined' ? (localStorage.token as string) : '') || '';
+
+	return {
+		'Content-Type': 'application/json',
+		// Native WebView is cross-origin, so the httponly auth cookie is not sent.
+		// Feature flags such as web search and code interpreter are auth-only.
+		...(authToken && { Authorization: `Bearer ${authToken}` })
+	};
+};
+
+export const getBackendConfig = async (token: string = '') => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_BASE_URL}/api/config`, {
 		method: 'GET',
 		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json'
-		}
+		headers: backendConfigHeaders(token)
 	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
@@ -1481,7 +1491,7 @@ export const getBackendConfig = async () => {
 					method: 'GET',
 					credentials: 'include',
 					redirect: 'manual',
-					headers: { 'Content-Type': 'application/json' }
+					headers: backendConfigHeaders(token)
 				});
 				if (
 					probeRes.type === 'opaqueredirect' ||

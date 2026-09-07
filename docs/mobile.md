@@ -11,6 +11,17 @@ and data.
 - Remote: `/api`, `/ollama`, `/openai`, `/oauth`, `/ws`, `/cache`
 - Server URL is stored on device (`owui.serverBaseUrl`) and applied through
   `src/lib/runtime/` plus live bindings in `src/lib/constants.ts`
+- `/api/config` must send the Bearer token. The WebView origin is
+  `https://localhost`, so the httponly login cookie is not sent on that
+  cross-origin request. Without the token the server omits authenticated
+  feature flags (`enable_web_search`, `enable_code_interpreter`, …) and the
+  chat integrations menu hides Web Search and Code Interpreter.
+- `<img>` does not send the Bearer token either. Model/user avatars
+  (`/api/v1/.../profile/image`) and `/cache` images 401 unless the network
+  gate fetches them with the token and assigns a blob URL. Frontend assets
+  (`/assets/emojis`, `/static/favicon.png`) must stay on the APK; prefixing
+  them with the server URL 404s because the Python backend does not serve
+  the packed web UI.
 
 Do not scatter server URLs through `src/lib/apis/**`.
 

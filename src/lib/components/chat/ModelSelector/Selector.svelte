@@ -9,8 +9,9 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { flyAndScale } from '$lib/utils/transitions';
+	import { fly } from 'svelte/transition';
 
-	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
+	import { createEventDispatcher, onMount, onDestroy, getContext, tick } from 'svelte';
 
 	import { deleteModel, getOllamaVersion, pullModel } from '$lib/apis/ollama';
 	import { deleteModelById } from '$lib/apis/models';
@@ -40,6 +41,7 @@
 	import Check from '$lib/components/icons/Check.svelte';
 	import Download from '$lib/components/icons/Download.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ChatBubbleOval from '$lib/components/icons/ChatBubbleOval.svelte';
@@ -121,7 +123,7 @@
 	};
 
 	const updatePosition = () => {
-		if (!show || !triggerElement) return;
+		if (!show || !triggerElement || $mobile) return;
 		const rect = triggerElement.getBoundingClientRect();
 		const { width: contentWidth, height: contentHeight } = measureContent();
 		const viewport = visualViewportRect();
@@ -177,9 +179,165 @@
 	};
 
 	const handleScroll = (event: Event) => {
+		if ($mobile) return;
 		if (event.target instanceof Node && contentElement?.contains(event.target)) return;
 		schedulePositionUpdate();
 	};
+
+	const closeSelector = () => {
+		show = false;
+		sheetDragging = false;
+		sheetPointerId = null;
+		stopSheetDragListeners();
+		document.getElementById(`model-selector-${id}-button`)?.blur();
+	};
+
+	const lockBody = () => {
+		if (typeof document === 'undefined') return;
+		document.body.style.overflow = 'hidden';
+	};
+
+	const unlockBody = () => {
+		if (typeof document === 'undefined') return;
+		document.body.style.overflow = 'unset';
+	};
+
+	const SHEET_HALF_RATIO = 0.58;
+	const SHEET_FULL_RATIO = 0.92;
+	const SHEET_CLOSE_RATIO = 0.28;
+	const SHEET_DRAG_THRESHOLD = 8;
+
+	let sheetSnap: 'half' | 'full' = 'half';
+	let sheetHeight = 0;
+	let sheetDragging = false;
+	let sheetDragMoved = false;
+	let sheetPointerId: number | null = null;
+	let sheetDragStartY = 0;
+	let sheetDragStartHeight = 0;
+
+	const viewportHeight = () => window.visualViewport?.height ?? window.innerHeight;
+
+	const sheetSnapHeight = (snap: 'half' | 'full') =>
+		Math.round(viewportHeight() * (snap === 'full' ? SHEET_FULL_RATIO : SHEET_HALF_RATIO));
+
+	const resetSheet = () => {
+		sheetSnap = 'half';
+		sheetDragging = false;
+		sheetDragMoved = false;
+		sheetPointerId = null;
+		sheetHeight = sheetSnapHeight('half');
+	};
+
+	const syncSheetToViewport = () => {
+		if (!show || !$mobile || sheetDragging) return;
+		sheetHeight = sheetSnapHeight(sheetSnap);
+	};
+
+	const stopSheetDragListeners = () => {
+		window.removeEventListener('pointermove', onSheetPointerMove);
+		window.removeEventListener('pointerup', onSheetPointerUp);
+		window.removeEventListener('pointercancel', onSheetPointerUp);
+	};
+
+	const onSheetPointerDown = (e: PointerEvent) => {
+		if (!$mobile || !show || e.button) return;
+		e.preventDefault();
+		sheetDragging = true;
+		sheetDragMoved = false;
+		sheetPointerId = e.pointerId;
+		sheetDragStartY = e.clientY;
+		sheetDragStartHeight = sheetHeight || sheetSnapHeight(sheetSnap);
+		window.addEventListener('pointermove', onSheetPointerMove);
+		window.addEventListener('pointerup', onSheetPointerUp);
+		window.addEventListener('pointercancel', onSheetPointerUp);
+	};
+
+	const onSheetPointerMove = (e: PointerEvent) => {
+		if (!sheetDragging || e.pointerId !== sheetPointerId) return;
+		const delta = sheetDragStartY - e.clientY;
+		if (Math.abs(delta) >= SHEET_DRAG_THRESHOLD) {
+			sheetDragMoved = true;
+		}
+		const maxH = sheetSnapHeight('full');
+		const minH = Math.round(viewportHeight() * 0.2);
+		sheetHeight = Math.min(maxH, Math.max(minH, sheetDragStartHeight + delta));
+	};
+
+	const onSheetPointerUp = (e: PointerEvent) => {
+		if (!sheetDragging || (sheetPointerId !== null && e.pointerId !== sheetPointerId)) return;
+		e.preventDefault();
+		sheetDragging = false;
+		sheetPointerId = null;
+		stopSheetDragListeners();
+
+		if (!sheetDragMoved) {
+			sheetSnap = sheetSnap === 'full' ? 'half' : 'full';
+			sheetHeight = sheetSnapHeight(sheetSnap);
+			return;
+		}
+
+		const ratio = sheetHeight / viewportHeight();
+		if (ratio < SHEET_CLOSE_RATIO) {
+			closeSelector();
+			return;
+		}
+
+		sheetSnap = ratio >= (SHEET_HALF_RATIO + SHEET_FULL_RATIO) / 2 ? 'full' : 'half';
+		sheetHeight = sheetSnapHeight(sheetSnap);
+	};
+
+	$: if (show && $mobile) {
+		lockBody();
+	} else {
+		unlockBody();
+	}
+
+	const filterChipClass = (active: boolean) =>
+		`shrink-0 whitespace-nowrap rounded-full px-3 min-h-9 text-sm font-medium transition-colors ${
+			active
+				? ($settings?.highContrastMode ?? false)
+					? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+					: 'bg-gray-800 text-white dark:bg-gray-100 dark:text-gray-900'
+				: ($settings?.highContrastMode ?? false)
+					? 'bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+					: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
+		}`;
+
+	function handleSearchKeydown(e: KeyboardEvent) {
+		if (e.code === 'Enter') {
+			if (selectedModelIdx >= filteredItems.length) {
+				const target = downloadTargets[selectedModelIdx - filteredItems.length];
+				if (target && !target.download) {
+					downloadModelHandler(target);
+				}
+			} else if (filteredItems[selectedModelIdx]) {
+				selectItem(filteredItems[selectedModelIdx], selectedModelIdx);
+			}
+			return;
+		} else if (e.code === 'ArrowDown') {
+			e.stopPropagation();
+			selectedModelIdx = Math.min(
+				selectedModelIdx + 1,
+				Math.max(filteredItems.length - 1 + downloadTargets.length, 0)
+			);
+		} else if (e.code === 'ArrowUp') {
+			e.stopPropagation();
+			selectedModelIdx = Math.max(selectedModelIdx - 1, 0);
+		} else {
+			selectedModelIdx = 0;
+		}
+
+		const item = document.querySelector(`[data-arrow-selected="true"]`);
+		item?.scrollIntoView({
+			block: 'center',
+			inline: 'nearest',
+			behavior: 'instant'
+		});
+	}
+
+	$: downloadRowClass = $mobile
+		? 'flex min-h-14 w-full select-none items-center gap-3 rounded-xl px-3 text-left text-sm font-normal text-gray-700 outline-hidden transition-colors duration-75 dark:text-gray-100'
+		: 'flex h-8 w-full select-none items-center gap-2 rounded-xl px-2 text-left text-[0.8125rem] font-normal text-gray-700 outline-hidden transition-colors duration-75 dark:text-gray-100';
 
 	const focusSearchInput = () => {
 		if (!$mobile) {
@@ -197,6 +355,9 @@
 		if (show) {
 			searchValue = '';
 			listScrollTop = 0;
+			if ($mobile) {
+				resetSheet();
+			}
 			if (!selectionOnly) {
 				setOllamaVersion();
 				setProviderDownloadConnections();
@@ -209,6 +370,7 @@
 				window.setTimeout(focusSearchInput, delay);
 			}
 		} else {
+			stopSheetDragListeners();
 			document.getElementById(`model-selector-${id}-button`)?.blur();
 		}
 	};
@@ -225,20 +387,19 @@
 		if (
 			(triggerElement && triggerElement.contains(target)) ||
 			(contentElement && contentElement.contains(target)) ||
-			((target as HTMLElement).closest?.('.model-selector-child-menu') ?? false)
+			((target as HTMLElement).closest?.('.model-selector-child-menu') ?? false) ||
+			((target as HTMLElement).closest?.('.modal') ?? false)
 		) {
 			return;
 		}
-		show = false;
-		document.getElementById(`model-selector-${id}-button`)?.blur();
+		closeSelector();
 	};
 
 	const handleKeydown = (e: KeyboardEvent) => {
 		if (show && e.key === 'Escape') {
 			e.preventDefault();
 			e.stopPropagation();
-			show = false;
-			document.getElementById(`model-selector-${id}-button`)?.blur();
+			closeSelector();
 		}
 	};
 
@@ -824,14 +985,22 @@
 		window.addEventListener('scroll', handleScroll, true);
 		window.visualViewport?.addEventListener('resize', scheduleSettledPositionUpdates);
 		window.visualViewport?.addEventListener('scroll', schedulePositionUpdate);
+		window.visualViewport?.addEventListener('resize', syncSheetToViewport);
 
 		return () => {
 			if (positionFrame != null) cancelAnimationFrame(positionFrame);
 			for (const timer of settleTimers) window.clearTimeout(timer);
+			stopSheetDragListeners();
 			window.removeEventListener('scroll', handleScroll, true);
 			window.visualViewport?.removeEventListener('resize', scheduleSettledPositionUpdates);
 			window.visualViewport?.removeEventListener('scroll', schedulePositionUpdate);
+			window.visualViewport?.removeEventListener('resize', syncSheetToViewport);
 		};
+	});
+
+	onDestroy(() => {
+		stopSheetDragListeners();
+		unlockBody();
 	});
 
 	const cancelModelPullHandler = async (model: string) => {
@@ -928,7 +1097,9 @@
 		deleteModelTarget = null;
 	};
 
-	const ITEM_HEIGHT = 32;
+	const DESKTOP_ITEM_HEIGHT = 32;
+	const MOBILE_ITEM_HEIGHT = 56;
+	$: ITEM_HEIGHT = $mobile ? MOBILE_ITEM_HEIGHT : DESKTOP_ITEM_HEIGHT;
 	const OVERSCAN = 10;
 
 	let listScrollTop = 0;
@@ -1011,353 +1182,419 @@
 			}}
 		>
 			<span class="min-w-0 flex-1 truncate">{triggerLabel}</span>
-			<ChevronDown className="ml-1 size-2.5 shrink-0 self-center" strokeWidth="2.5" />
+			<ChevronDown
+				className="ml-1 {$mobile ? 'size-3.5' : 'size-2.5'} shrink-0 self-center"
+				strokeWidth="2.5"
+			/>
 		</div>
 	</button>
 
-	{#if show}
-		<div
-			use:portal
-			bind:this={contentElement}
-			style="position: fixed; z-index: 9999; top: {dropdownPosition.top}px; left: {dropdownPosition.left}px;"
-		>
-			<div
-				bind:this={panelElement}
-				class="z-40 {className ??
-					'w-[20rem]'} max-w-[calc(100vw-1rem)] justify-start rounded-xl border border-gray-100 bg-white p-0.5 shadow-lg outline-hidden dark:border-gray-800 dark:bg-gray-850 dark:text-white flex flex-col overflow-hidden"
-				style={dropdownPosition.maxHeight ? `max-height: ${dropdownPosition.maxHeight}px;` : ''}
-				transition:flyAndScale
-			>
-				<slot>
-					{#if searchEnabled}
-						<div class="my-0.5 flex ml-2 mr-0.5 h-[1.6875rem] shrink-0 items-center gap-2">
-							<Search className=" size-3.5 shrink-0" strokeWidth="2" />
-
-							<input
-								id="model-search-input"
-								bind:value={searchValue}
-								class="w-full bg-transparent text-[0.8125rem] font-normal outline-hidden placeholder:text-gray-400 dark:placeholder:text-gray-500"
-								placeholder={searchPlaceholder}
-								autocomplete="off"
-								aria-label={$i18n.t('Search In Models')}
-								on:keydown={(e) => {
-									if (e.code === 'Enter') {
-										if (selectedModelIdx >= filteredItems.length) {
-											const target = downloadTargets[selectedModelIdx - filteredItems.length];
-											if (target && !target.download) {
-												downloadModelHandler(target);
-											}
-										} else if (filteredItems[selectedModelIdx]) {
-											selectItem(filteredItems[selectedModelIdx], selectedModelIdx);
-										}
-										return; // dont need to scroll on selection
-									} else if (e.code === 'ArrowDown') {
-										e.stopPropagation();
-										selectedModelIdx = Math.min(
-											selectedModelIdx + 1,
-											Math.max(filteredItems.length - 1 + downloadTargets.length, 0)
-										);
-									} else if (e.code === 'ArrowUp') {
-										e.stopPropagation();
-										selectedModelIdx = Math.max(selectedModelIdx - 1, 0);
-									} else {
-										// if the user types something, reset to the top selection.
-										selectedModelIdx = 0;
-									}
-
-									const item = document.querySelector(`[data-arrow-selected="true"]`);
-									item?.scrollIntoView({
-										block: 'center',
-										inline: 'nearest',
-										behavior: 'instant'
-									});
-								}}
-							/>
-
-							{#if modelFilterItems.length > 0 || (multipleEnabled && items.length > 0)}
-								<div class="flex min-w-0 shrink-0 items-center gap-0.5">
-									{#if multipleEnabled && items.length > 0}
-										<Tooltip content={$i18n.t('Compare')}>
-											<button
-												type="button"
-												class="focus-ring flex size-[1.375rem] shrink-0 items-center justify-center rounded-lg transition-colors duration-100 {compareEnabled
-													? ($settings?.highContrastMode ?? false)
-														? 'bg-gray-200 text-gray-900 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-800'
-														: 'bg-gray-50 text-gray-700 hover:bg-gray-50 dark:bg-gray-800/60 dark:text-gray-200 dark:hover:bg-gray-800/60'
-													: ($settings?.highContrastMode ?? false)
-														? 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-														: 'text-gray-500 hover:bg-gray-50/40 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/40 dark:hover:text-gray-100'}"
-												aria-label={$i18n.t('Compare')}
-												aria-pressed={compareEnabled}
-												on:click={() => {
-													setCompareEnabled(!compareEnabled);
-												}}
-											>
-												<Keyframes className="size-3" strokeWidth="2" />
-											</button>
-										</Tooltip>
-									{/if}
-
-									{#if modelFilterItems.length > 0}
-										<TagSelector
-											bind:value={selectedFilter}
-											placeholder={$i18n.t('All')}
-											align="end"
-											items={modelFilterItems}
-											triggerClass="relative flex h-[1.375rem] max-w-32 items-center gap-0.5 rounded-xl bg-transparent px-1.5 text-[0.6875rem] font-normal transition-colors duration-100 {($settings?.highContrastMode ??
-											false)
-												? 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-												: 'text-gray-500 hover:bg-gray-50/40 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/40 dark:hover:text-gray-100'}"
-											itemClass="flex h-[1.6875rem] w-full cursor-pointer items-center gap-2 rounded-xl bg-transparent px-2 text-[0.8125rem] capitalize {($settings?.highContrastMode ??
-											false)
-												? 'hover:bg-gray-200 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
-												: 'hover:bg-gray-50/40 hover:text-gray-900 dark:hover:bg-gray-800/40 dark:hover:text-gray-100'}"
-											contentClass="min-w-36 model-selector-child-menu"
-											onChange={setModelFilter}
-										/>
-									{/if}
-								</div>
-							{/if}
-						</div>
-					{/if}
-
-					<div class="group relative flex min-h-0 flex-1 flex-col">
-						{#if filteredItems.length === 0}
-							{#if items.length === 0 && $user?.role === 'admin'}
-								<div
-									class="my-2 flex w-full flex-col items-start justify-center px-4 py-3 text-start"
-								>
-									<div
-										class="mb-0.5 text-xs font-normal leading-4 text-gray-800 dark:text-gray-100"
-									>
-										{$i18n.t('No models available')}
-									</div>
-									<div class="w-full text-[0.6875rem] leading-3.5 text-gray-500 dark:text-gray-400">
-										{$i18n.t('Connect to an AI provider to start chatting')}
-									</div>
-									<button
-										type="button"
-										class="focus-ring mt-3 rounded-lg px-0 py-1 text-[0.6875rem] font-normal leading-none text-gray-600 underline-offset-2 transition-colors duration-100 hover:text-gray-800 hover:underline focus:outline-hidden focus:underline dark:text-gray-300 dark:hover:text-gray-100"
-										on:click={() => {
-											show = false;
-											showSettings.set('admin:connections');
-										}}
-									>
-										{$i18n.t('Manage Connections')}
-									</button>
-								</div>
-							{:else}
-								<div class="">
-									<div
-										class="flex min-h-8 items-center rounded-xl px-2 text-[0.8125rem] text-gray-700 dark:text-gray-100"
-									>
-										{$i18n.t('No results found')}
-									</div>
-								</div>
-							{/if}
-						{:else}
-							<!-- svelte-ignore a11y-no-static-element-interactions -->
-							<div
-								class="min-h-0 flex-1 overflow-y-auto"
-								style="max-height: 18rem;"
-								role="listbox"
-								aria-label={$i18n.t('Available models')}
-								bind:this={listContainer}
-								use:trackListViewport
-								on:scroll={() => {
-									listScrollTop = listContainer.scrollTop;
-								}}
-							>
-								<div style="height: {visibleStart * ITEM_HEIGHT}px;" />
-								{#each filteredItems.slice(visibleStart, visibleEnd) as item, i (item.value)}
-									{@const index = visibleStart + i}
-									<ModelItem
-										{selectedModelIdx}
-										{item}
-										{index}
-										value={primaryValue}
-										{pinModelHandler}
-										{unloadModelHandler}
-										{deleteModelHandler}
-										{selectionOnly}
-										{compareEnabled}
-										{selectedValues}
-										onClick={() => {
-											selectItem(item, index);
-										}}
-									/>
-								{/each}
-								<div style="height: {(filteredItems.length - visibleEnd) * ITEM_HEIGHT}px;" />
-							</div>
-						{/if}
-
-						{#each downloadTargets as target, targetIndex (target.id)}
-							{#if target.download}
-								<Tooltip
-									content={target.download?.digest && target.download.digest !== 'downloading'
-										? target.download.digest
-										: searchValue}
-									placement="top-start"
-								>
-									<div
-										role="option"
-										aria-selected={selectedModelIdx === filteredItems.length + targetIndex}
-										data-arrow-selected={selectedModelIdx === filteredItems.length + targetIndex}
-										class="flex h-8 w-full select-none items-center gap-2 rounded-xl px-2 text-left text-[0.8125rem] font-normal text-gray-700 outline-hidden transition-colors duration-75 dark:text-gray-100 {selectedModelIdx ===
-										filteredItems.length + targetIndex
-											? ($settings?.highContrastMode ?? false)
-												? 'bg-gray-200 dark:bg-gray-800'
-												: 'bg-gray-50/70 dark:bg-gray-800/60'
-											: ''}"
-									>
-										<Spinner className="size-3 shrink-0 text-gray-400 dark:text-gray-500" />
-										<div class="min-w-0 flex-1 truncate">
-											{$i18n.t('Downloading "{{searchValue}}"', { searchValue: searchValue })}
-										</div>
-										{#if 'pullProgress' in target.download}
-											<div
-												class="shrink-0 text-[0.6875rem] tabular-nums text-gray-500 dark:text-gray-400"
-											>
-												{target.download.pullProgress}%
-											</div>
-										{/if}
-										<button
-											class="focus-ring flex size-4 shrink-0 items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-											aria-label={$i18n.t('Cancel download of {{model}}', { model: searchValue })}
-											on:click|stopPropagation={() => {
-												cancelModelPullHandler(target.poolKey);
-											}}
-										>
-											<svg
-												class="size-2.5"
-												aria-hidden="true"
-												xmlns="http://www.w3.org/2000/svg"
-												width="24"
-												height="24"
-												fill="currentColor"
-												viewBox="0 0 24 24"
-											>
-												<path
-													stroke="currentColor"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2.5"
-													d="M6 18 17.94 6M18 18 6.06 6"
-												/>
-											</svg>
-										</button>
-									</div>
-								</Tooltip>
-							{:else}
-								<Tooltip content={target.actionLabel} placement="top-start">
-									<button
-										type="button"
-										role="option"
-										aria-selected={selectedModelIdx === filteredItems.length + targetIndex}
-										data-arrow-selected={selectedModelIdx === filteredItems.length + targetIndex}
-										class="focus-ring flex h-8 w-full cursor-pointer select-none items-center gap-2 rounded-xl px-2 text-left text-[0.8125rem] font-normal text-gray-700 outline-hidden transition-colors duration-75 dark:text-gray-100 {($settings?.highContrastMode ??
-										false)
-											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
-											: 'hover:bg-gray-50/40 dark:hover:bg-gray-800/40'} {selectedModelIdx ===
-										filteredItems.length + targetIndex
-											? ($settings?.highContrastMode ?? false)
-												? 'bg-gray-200 dark:bg-gray-800'
-												: 'bg-gray-50/70 dark:bg-gray-800/60'
-											: ''}"
-										on:click={() => {
-											downloadModelHandler(target);
-										}}
-									>
-										<Download className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
-										<div class="min-w-0 flex-1 truncate">
-											{$i18n.t('Download "{{searchValue}}"', { searchValue: searchValue })}
-										</div>
-										<div
-											class="shrink-0 truncate text-[0.6875rem] text-gray-500 dark:text-gray-400"
-										>
-											{target.label}
-										</div>
-									</button>
-								</Tooltip>
-							{/if}
-						{/each}
-
-						{#each selectionOnly ? [] : Object.keys($MODEL_DOWNLOAD_POOL).filter((model) => !activeDownloadKeys.has(model)) as model}
-							{@const download = $MODEL_DOWNLOAD_POOL[model]}
-							{@const downloadName = download?.model ?? model}
-							<Tooltip
-								content={download?.digest && download.digest !== 'downloading'
-									? download.digest
-									: downloadName}
-								placement="top-start"
-							>
-								<div
-									class="flex h-8 w-full select-none items-center gap-2 rounded-xl px-2 text-left text-[0.8125rem] font-normal text-gray-700 outline-hidden transition-colors duration-75 dark:text-gray-100"
-								>
-									<Spinner className="size-3 shrink-0 text-gray-400 dark:text-gray-500" />
-									<div class="min-w-0 flex-1 truncate">
-										Downloading "{downloadName}"{download?.providerLabel
-											? ` from ${download.providerLabel}`
-											: ''}
-									</div>
-									{#if 'pullProgress' in download}
-										<div
-											class="shrink-0 text-[0.6875rem] tabular-nums text-gray-500 dark:text-gray-400"
-										>
-											{download.pullProgress}%
-										</div>
-									{/if}
-									<button
-										class="focus-ring flex size-4 shrink-0 items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-										aria-label={$i18n.t('Cancel download of {{model}}', { model: downloadName })}
-										on:click|stopPropagation={() => {
-											cancelModelPullHandler(model);
-										}}
-									>
-										<svg
-											class="size-2.5"
-											aria-hidden="true"
-											xmlns="http://www.w3.org/2000/svg"
-											width="24"
-											height="24"
-											fill="currentColor"
-											viewBox="0 0 24 24"
-										>
-											<path
-												stroke="currentColor"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2.5"
-												d="M6 18 17.94 6M18 18 6.06 6"
-											/>
-										</svg>
-									</button>
-								</div>
-							</Tooltip>
-						{/each}
+	{#snippet selectorBody()}
+		{#if searchEnabled}
+			{#if $mobile}
+				<div class="flex shrink-0 items-center gap-1 px-3 pb-2">
+					<div
+						class="flex min-h-10 flex-1 items-center gap-2 rounded-xl bg-gray-100 px-3 dark:bg-gray-800"
+					>
+						<Search className="size-4 shrink-0" strokeWidth="2" />
+						<input
+							id="model-search-input"
+							bind:value={searchValue}
+							class="h-10 w-full bg-transparent text-sm font-normal outline-hidden placeholder:text-gray-400 dark:placeholder:text-gray-500"
+							placeholder={searchPlaceholder}
+							autocomplete="off"
+							aria-label={$i18n.t('Search In Models')}
+							on:keydown={handleSearchKeydown}
+						/>
 					</div>
+					<button
+						type="button"
+						class="flex size-10 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+						aria-label={$i18n.t('Close')}
+						on:click={closeSelector}
+					>
+						<XMark className="size-5" />
+					</button>
+				</div>
 
-					{#if showSetDefault}
-						<div class="flex shrink-0 items-center justify-end px-2 py-1 leading-none">
+				{#if modelFilterItems.length > 0 || (multipleEnabled && items.length > 0)}
+					<div class="flex shrink-0 gap-2 overflow-x-auto px-4 pb-2 scrollbar-none">
+						{#if multipleEnabled && items.length > 0}
 							<button
 								type="button"
-								class="focus-ring text-[0.65rem] font-normal leading-none text-gray-500 underline-offset-2 transition-colors duration-100 hover:text-gray-700 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
-								on:click|stopPropagation={setDefaultHandler}
+								class={filterChipClass(compareEnabled)}
+								aria-pressed={compareEnabled}
+								on:click={() => {
+									setCompareEnabled(!compareEnabled);
+								}}
 							>
-								{$i18n.t('Set as default')}
+								{$i18n.t('Compare')}
+							</button>
+						{/if}
+
+						<button
+							type="button"
+							class={filterChipClass(!selectedFilter)}
+							on:click={() => setModelFilter('')}
+						>
+							{$i18n.t('All')}
+						</button>
+
+						{#each modelFilterItems as filter (filter.value)}
+							<button
+								type="button"
+								class="{filterChipClass(selectedFilter === filter.value)} capitalize"
+								on:click={() => setModelFilter(selectedFilter === filter.value ? '' : filter.value)}
+							>
+								{filter.label}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			{:else}
+				<div class="my-0.5 flex ml-2 mr-0.5 h-[1.6875rem] shrink-0 items-center gap-2">
+					<Search className=" size-3.5 shrink-0" strokeWidth="2" />
+
+					<input
+						id="model-search-input"
+						bind:value={searchValue}
+						class="w-full bg-transparent text-[0.8125rem] font-normal outline-hidden placeholder:text-gray-400 dark:placeholder:text-gray-500"
+						placeholder={searchPlaceholder}
+						autocomplete="off"
+						aria-label={$i18n.t('Search In Models')}
+						on:keydown={handleSearchKeydown}
+					/>
+
+					{#if modelFilterItems.length > 0 || (multipleEnabled && items.length > 0)}
+						<div class="flex min-w-0 shrink-0 items-center gap-0.5">
+							{#if multipleEnabled && items.length > 0}
+								<Tooltip content={$i18n.t('Compare')}>
+									<button
+										type="button"
+										class="focus-ring flex size-[1.375rem] shrink-0 items-center justify-center rounded-lg transition-colors duration-100 {compareEnabled
+											? ($settings?.highContrastMode ?? false)
+												? 'bg-gray-200 text-gray-900 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-800'
+												: 'bg-gray-50 text-gray-700 hover:bg-gray-50 dark:bg-gray-800/60 dark:text-gray-200 dark:hover:bg-gray-800/60'
+											: ($settings?.highContrastMode ?? false)
+												? 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+												: 'text-gray-500 hover:bg-gray-50/40 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/40 dark:hover:text-gray-100'}"
+										aria-label={$i18n.t('Compare')}
+										aria-pressed={compareEnabled}
+										on:click={() => {
+											setCompareEnabled(!compareEnabled);
+										}}
+									>
+										<Keyframes className="size-3" strokeWidth="2" />
+									</button>
+								</Tooltip>
+							{/if}
+
+							{#if modelFilterItems.length > 0}
+								<TagSelector
+									bind:value={selectedFilter}
+									placeholder={$i18n.t('All')}
+									align="end"
+									items={modelFilterItems}
+									triggerClass="relative flex h-[1.375rem] max-w-32 items-center gap-0.5 rounded-xl bg-transparent px-1.5 text-[0.6875rem] font-normal transition-colors duration-100 {($settings?.highContrastMode ??
+									false)
+										? 'text-gray-700 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+										: 'text-gray-500 hover:bg-gray-50/40 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/40 dark:hover:text-gray-100'}"
+									itemClass="flex h-[1.6875rem] w-full cursor-pointer items-center gap-2 rounded-xl bg-transparent px-2 text-[0.8125rem] capitalize {($settings?.highContrastMode ??
+									false)
+										? 'hover:bg-gray-200 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+										: 'hover:bg-gray-50/40 hover:text-gray-900 dark:hover:bg-gray-800/40 dark:hover:text-gray-100'}"
+									contentClass="min-w-36 model-selector-child-menu"
+									onChange={setModelFilter}
+								/>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
+		{/if}
+
+		<div class="group relative flex min-h-0 flex-1 flex-col">
+			{#if filteredItems.length === 0}
+				{#if items.length === 0 && $user?.role === 'admin'}
+					<div class="my-2 flex w-full flex-col items-start justify-center px-4 py-3 text-start">
+						<div class="mb-0.5 text-xs font-normal leading-4 text-gray-800 dark:text-gray-100">
+							{$i18n.t('No models available')}
+						</div>
+						<div class="w-full text-[0.6875rem] leading-3.5 text-gray-500 dark:text-gray-400">
+							{$i18n.t('Connect to an AI provider to start chatting')}
+						</div>
+						<button
+							type="button"
+							class="focus-ring mt-3 rounded-lg px-0 py-1 text-[0.6875rem] font-normal leading-none text-gray-600 underline-offset-2 transition-colors duration-100 hover:text-gray-800 hover:underline focus:outline-hidden focus:underline dark:text-gray-300 dark:hover:text-gray-100"
+							on:click={() => {
+								show = false;
+								showSettings.set('admin:connections');
+							}}
+						>
+							{$i18n.t('Manage Connections')}
+						</button>
+					</div>
+				{:else}
+					<div class="">
+						<div
+							class="flex min-h-8 items-center rounded-xl px-2 text-[0.8125rem] text-gray-700 dark:text-gray-100"
+						>
+							{$i18n.t('No results found')}
+						</div>
+					</div>
+				{/if}
+			{:else}
+				<!-- svelte-ignore a11y-no-static-element-interactions -->
+				<div
+					class="min-h-0 overflow-y-auto overscroll-contain {$mobile ? 'flex-1 px-1' : 'flex-1'}"
+					style={$mobile ? '' : 'max-height: 18rem;'}
+					role="listbox"
+					aria-label={$i18n.t('Available models')}
+					bind:this={listContainer}
+					use:trackListViewport
+					on:scroll={() => {
+						listScrollTop = listContainer.scrollTop;
+					}}
+				>
+					<div style="height: {visibleStart * ITEM_HEIGHT}px;" />
+					{#each filteredItems.slice(visibleStart, visibleEnd) as item, i (item.value)}
+						{@const index = visibleStart + i}
+						<ModelItem
+							{selectedModelIdx}
+							{item}
+							{index}
+							value={primaryValue}
+							{pinModelHandler}
+							{unloadModelHandler}
+							{deleteModelHandler}
+							{selectionOnly}
+							{compareEnabled}
+							{selectedValues}
+							onClick={() => {
+								selectItem(item, index);
+							}}
+						/>
+					{/each}
+					<div style="height: {(filteredItems.length - visibleEnd) * ITEM_HEIGHT}px;" />
+				</div>
+			{/if}
+
+			{#each downloadTargets as target, targetIndex (target.id)}
+				{#if target.download}
+					<Tooltip
+						content={target.download?.digest && target.download.digest !== 'downloading'
+							? target.download.digest
+							: searchValue}
+						placement="top-start"
+					>
+						<div
+							role="option"
+							aria-selected={selectedModelIdx === filteredItems.length + targetIndex}
+							data-arrow-selected={selectedModelIdx === filteredItems.length + targetIndex}
+							class="{downloadRowClass} {selectedModelIdx === filteredItems.length + targetIndex
+								? ($settings?.highContrastMode ?? false)
+									? 'bg-gray-200 dark:bg-gray-800'
+									: 'bg-gray-50/70 dark:bg-gray-800/60'
+								: ''}"
+						>
+							<Spinner className="size-3 shrink-0 text-gray-400 dark:text-gray-500" />
+							<div class="min-w-0 flex-1 truncate">
+								{$i18n.t('Downloading "{{searchValue}}"', { searchValue: searchValue })}
+							</div>
+							{#if 'pullProgress' in target.download}
+								<div
+									class="shrink-0 text-[0.6875rem] tabular-nums text-gray-500 dark:text-gray-400"
+								>
+									{target.download.pullProgress}%
+								</div>
+							{/if}
+							<button
+								class="focus-ring flex size-4 shrink-0 items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+								aria-label={$i18n.t('Cancel download of {{model}}', { model: searchValue })}
+								on:click|stopPropagation={() => {
+									cancelModelPullHandler(target.poolKey);
+								}}
+							>
+								<svg
+									class="size-2.5"
+									aria-hidden="true"
+									xmlns="http://www.w3.org/2000/svg"
+									width="24"
+									height="24"
+									fill="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke="currentColor"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2.5"
+										d="M6 18 17.94 6M18 18 6.06 6"
+									/>
+								</svg>
 							</button>
 						</div>
-					{:else}
-						<div class="shrink-0 pb-1"></div>
-					{/if}
+					</Tooltip>
+				{:else}
+					<Tooltip content={target.actionLabel} placement="top-start">
+						<button
+							type="button"
+							role="option"
+							aria-selected={selectedModelIdx === filteredItems.length + targetIndex}
+							data-arrow-selected={selectedModelIdx === filteredItems.length + targetIndex}
+							class="focus-ring cursor-pointer {downloadRowClass} {($settings?.highContrastMode ??
+							false)
+								? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+								: 'hover:bg-gray-50/40 dark:hover:bg-gray-800/40'} {selectedModelIdx ===
+							filteredItems.length + targetIndex
+								? ($settings?.highContrastMode ?? false)
+									? 'bg-gray-200 dark:bg-gray-800'
+									: 'bg-gray-50/70 dark:bg-gray-800/60'
+								: ''}"
+							on:click={() => {
+								downloadModelHandler(target);
+							}}
+						>
+							<Download className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
+							<div class="min-w-0 flex-1 truncate">
+								{$i18n.t('Download "{{searchValue}}"', { searchValue: searchValue })}
+							</div>
+							<div class="shrink-0 truncate text-[0.6875rem] text-gray-500 dark:text-gray-400">
+								{target.label}
+							</div>
+						</button>
+					</Tooltip>
+				{/if}
+			{/each}
 
-					<div class="hidden w-[42rem]" />
-					<div class="hidden w-[28rem]" />
-					<div class="hidden w-[24rem]" />
-					<div class="hidden w-[22rem]" />
-					<div class="hidden w-[20rem]" />
-				</slot>
-			</div>
+			{#each selectionOnly ? [] : Object.keys($MODEL_DOWNLOAD_POOL).filter((model) => !activeDownloadKeys.has(model)) as model}
+				{@const download = $MODEL_DOWNLOAD_POOL[model]}
+				{@const downloadName = download?.model ?? model}
+				<Tooltip
+					content={download?.digest && download.digest !== 'downloading'
+						? download.digest
+						: downloadName}
+					placement="top-start"
+				>
+					<div class={downloadRowClass}>
+						<Spinner className="size-3 shrink-0 text-gray-400 dark:text-gray-500" />
+						<div class="min-w-0 flex-1 truncate">
+							Downloading "{downloadName}"{download?.providerLabel
+								? ` from ${download.providerLabel}`
+								: ''}
+						</div>
+						{#if 'pullProgress' in download}
+							<div class="shrink-0 text-[0.6875rem] tabular-nums text-gray-500 dark:text-gray-400">
+								{download.pullProgress}%
+							</div>
+						{/if}
+						<button
+							class="focus-ring flex size-4 shrink-0 items-center justify-center rounded text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+							aria-label={$i18n.t('Cancel download of {{model}}', { model: downloadName })}
+							on:click|stopPropagation={() => {
+								cancelModelPullHandler(model);
+							}}
+						>
+							<svg
+								class="size-2.5"
+								aria-hidden="true"
+								xmlns="http://www.w3.org/2000/svg"
+								width="24"
+								height="24"
+								fill="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke="currentColor"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2.5"
+									d="M6 18 17.94 6M18 18 6.06 6"
+								/>
+							</svg>
+						</button>
+					</div>
+				</Tooltip>
+			{/each}
 		</div>
+
+		{#if showSetDefault}
+			<div
+				class="flex shrink-0 items-center {$mobile
+					? 'border-t border-gray-100 px-4 py-2 dark:border-gray-800'
+					: 'justify-end px-2 py-1 leading-none'}"
+			>
+				<button
+					type="button"
+					class="focus-ring {$mobile
+						? 'min-h-11 w-full rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+						: 'text-[0.65rem] font-normal leading-none text-gray-500 underline-offset-2 transition-colors duration-100 hover:text-gray-700 hover:underline dark:text-gray-500 dark:hover:text-gray-300'}"
+					on:click|stopPropagation={setDefaultHandler}
+				>
+					{$i18n.t('Set as default')}
+				</button>
+			</div>
+		{:else}
+			<div class="shrink-0 {$mobile ? 'pb-3' : 'pb-1'}"></div>
+		{/if}
+
+		<div class="hidden w-[42rem]" />
+		<div class="hidden w-[28rem]" />
+		<div class="hidden w-[24rem]" />
+		<div class="hidden w-[22rem]" />
+		<div class="hidden w-[20rem]" />
+	{/snippet}
+
+	{#if show}
+		{#if $mobile}
+			<div
+				use:portal
+				class="fixed inset-0 z-[9999] flex h-full max-h-[100dvh] flex-col justify-end"
+			>
+				<button
+					type="button"
+					class="absolute inset-0 bg-black/40"
+					aria-label={$i18n.t('Close')}
+					on:click={closeSelector}
+				></button>
+				<div
+					bind:this={contentElement}
+					class="relative z-10 flex min-h-0 w-full flex-col overflow-hidden rounded-t-2xl border-t border-gray-100 bg-white pb-[env(safe-area-inset-bottom,0px)] shadow-lg outline-hidden dark:border-gray-800 dark:bg-gray-850 dark:text-white"
+					style="height: {sheetHeight ? `${sheetHeight}px` : '58dvh'}; transition: {sheetDragging
+						? 'none'
+						: 'height 200ms ease'};"
+					role="dialog"
+					aria-modal="true"
+					aria-label={placeholder}
+					in:fly={{ y: 80, duration: 180 }}
+				>
+					<button
+						type="button"
+						class="flex w-full shrink-0 touch-none flex-col items-center pt-2 pb-2"
+						aria-label={$i18n.t('Resize')}
+						on:pointerdown={onSheetPointerDown}
+					>
+						<div class="h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+					</button>
+					{@render selectorBody()}
+				</div>
+			</div>
+		{:else}
+			<div
+				use:portal
+				bind:this={contentElement}
+				style="position: fixed; z-index: 9999; top: {dropdownPosition.top}px; left: {dropdownPosition.left}px;"
+			>
+				<div
+					bind:this={panelElement}
+					class="z-40 {className ??
+						'w-[20rem]'} max-w-[calc(100vw-1rem)] justify-start rounded-xl border border-gray-100 bg-white p-0.5 shadow-lg outline-hidden dark:border-gray-800 dark:bg-gray-850 dark:text-white flex flex-col overflow-hidden"
+					style={dropdownPosition.maxHeight ? `max-height: ${dropdownPosition.maxHeight}px;` : ''}
+					transition:flyAndScale
+				>
+					{@render selectorBody()}
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>

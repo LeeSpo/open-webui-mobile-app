@@ -48,14 +48,21 @@
 
 	let showMenu = false;
 	$: isSelected = compareEnabled ? selectedValues.includes(item.value) : value === item.value;
+	$: parameterLabel =
+		item.model?.owned_by === 'ollama'
+			? (item.model.ollama?.details?.parameter_size ?? '')
+			: item.model?.provider === 'lmstudio' || item.model?.provider === 'llama.cpp'
+				? (item.model.params_string ?? item.model.details?.parameter_size ?? '')
+				: '';
 </script>
 
 <button
 	role="option"
 	aria-selected={isSelected}
 	aria-label={$i18n.t('Select {{modelName}} model', { modelName: item.label })}
-	class="focus-ring group/item flex h-8 w-full cursor-pointer select-none items-center rounded-xl px-2 text-left text-[0.8125rem] font-normal text-gray-700 outline-hidden transition-colors duration-75 dark:text-gray-100 {($settings?.highContrastMode ??
-	false)
+	class="focus-ring group/item flex w-full cursor-pointer select-none rounded-xl text-left font-normal text-gray-700 outline-hidden transition-colors duration-75 dark:text-gray-100 {$mobile
+		? 'h-14 items-center px-3 py-2 text-sm'
+		: 'h-8 items-center px-2 text-[0.8125rem]'} {($settings?.highContrastMode ?? false)
 		? 'hover:bg-gray-200 dark:hover:bg-gray-800'
 		: 'hover:bg-gray-50/40 dark:hover:bg-gray-800/40'} {index === selectedModelIdx &&
 	!compareEnabled
@@ -73,7 +80,7 @@
 		onClick();
 	}}
 >
-	<div class="flex flex-1 flex-col gap-1.5 overflow-hidden">
+	<div class="flex min-w-0 flex-1 flex-col gap-1.5 overflow-hidden">
 		<!-- {#if (item?.model?.tags ?? []).length > 0}
 			<div
 				class="flex gap-0.5 self-center items-start h-full w-full translate-y-[0.5px] overflow-x-auto scrollbar-none"
@@ -90,13 +97,13 @@
 			</div>
 		{/if} -->
 
-		<div class="flex items-center gap-2 overflow-hidden">
+		<div class="flex items-center gap-2 overflow-hidden {$mobile ? 'gap-3' : ''}">
 			<div class="flex items-center min-w-fit">
 				<Tooltip content={$user?.role === 'admin' ? (item?.value ?? '') : ''} placement="top-start">
 					<img
 						src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${item.model.id}&lang=${$i18n.language}`}
 						alt={$i18n.t('{{modelName}} profile image', { modelName: item.label })}
-						class="flex size-4 items-center rounded-full"
+						class="flex items-center rounded-full {$mobile ? 'size-8' : 'size-4'}"
 						loading="lazy"
 						on:error={(e) => {
 							// LICENSE covers this Open WebUI fallback logo.
@@ -108,15 +115,33 @@
 				</Tooltip>
 			</div>
 
-			<div class="flex min-w-0 items-center">
-				<Tooltip content={`${item.label} (${item.value})`} placement="top-start">
-					<div class="line-clamp-1">
-						{item.label}
+			<div class="flex min-w-0 flex-1 {$mobile ? 'flex-col items-start gap-0.5' : 'items-center'}">
+				<div class="flex min-w-0 max-w-full items-center gap-1.5">
+					<Tooltip content={`${item.label} (${item.value})`} placement="top-start">
+						<div class="line-clamp-1 {$mobile ? 'text-sm font-medium leading-tight' : ''}">
+							{item.label}
+						</div>
+					</Tooltip>
+					{#if $mobile && item.model.loaded}
+						<span class="relative flex size-1.5 shrink-0">
+							<span
+								class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"
+							></span>
+							<span class="relative inline-flex size-1.5 rounded-full bg-green-500"></span>
+						</span>
+					{/if}
+				</div>
+
+				{#if $mobile && parameterLabel}
+					<div
+						class="line-clamp-1 text-xs leading-tight font-normal text-gray-500 dark:text-gray-400"
+					>
+						{parameterLabel}
 					</div>
-				</Tooltip>
+				{/if}
 			</div>
 
-			<div class="flex shrink-0 items-center gap-1.5">
+			<div class="flex shrink-0 items-center gap-1.5 {$mobile ? 'hidden' : ''}">
 				{#if item.model.owned_by === 'ollama'}
 					{#if (item.model.ollama?.details?.parameter_size ?? '') !== ''}
 						<div class="flex items-center translate-y-[0.5px]">
@@ -176,8 +201,8 @@
 								<span class="relative flex size-1.5">
 									<span
 										class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"
-									/>
-									<span class="relative inline-flex size-1.5 rounded-full bg-green-500" />
+									></span>
+									<span class="relative inline-flex size-1.5 rounded-full bg-green-500"></span>
 								</span>
 							</div>
 						</Tooltip>
@@ -279,10 +304,10 @@
 		{#if !selectionOnly && $user?.role === 'admin' && item.model.loaded}
 			<Tooltip
 				content={`${$i18n.t('Eject')}`}
-				className="flex-shrink-0 group-hover/item:opacity-100 opacity-0 "
+				className="flex-shrink-0 {$mobile ? '' : 'group-hover/item:opacity-100 opacity-0'}"
 			>
 				<button
-					class="focus-ring flex"
+					class="focus-ring flex {$mobile ? 'size-11 items-center justify-center' : ''}"
 					aria-label={$i18n.t('Eject model')}
 					on:click={(e) => {
 						e.preventDefault();
@@ -290,7 +315,7 @@
 						unloadModelHandler(item.value);
 					}}
 				>
-					<ArrowUpTray className="size-3" />
+					<ArrowUpTray className={$mobile ? 'size-4' : 'size-3'} />
 				</button>
 			</Tooltip>
 		{/if}
@@ -307,21 +332,21 @@
 			>
 				<button
 					aria-label={`${$i18n.t('More Options')}`}
-					class="focus-ring flex"
+					class="focus-ring flex {$mobile ? 'size-11 items-center justify-center' : ''}"
 					on:click={(e) => {
 						e.preventDefault();
 						e.stopPropagation();
 						showMenu = !showMenu;
 					}}
 				>
-					<EllipsisHorizontal />
+					<EllipsisHorizontal className={$mobile ? 'size-5' : 'w-4 h-4'} />
 				</button>
 			</ModelItemMenu>
 		{/if}
 
 		{#if isSelected}
 			<div>
-				<Check className="size-3" />
+				<Check className={$mobile ? 'size-4' : 'size-3'} />
 			</div>
 		{/if}
 	</div>

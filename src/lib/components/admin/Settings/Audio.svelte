@@ -181,7 +181,7 @@
 
 		if (res) {
 			saveHandler();
-			config.set(await getBackendConfig());
+			config.set(await getBackendConfig(localStorage.token));
 		}
 	};
 

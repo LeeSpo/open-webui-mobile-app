@@ -9,10 +9,14 @@
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
 	import Link from '$lib/components/icons/Link.svelte';
 	import Pencil from '$lib/components/icons/Pencil.svelte';
-	import { config, pinnedModels, settings, showSettings, user } from '$lib/stores';
+	import { config, mobile, pinnedModels, settings, showSettings, user } from '$lib/stores';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 
 	const i18n = getContext('i18n');
+
+	$: menuItemClass = $mobile
+		? 'select-none flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition'
+		: 'select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition';
 
 	export let show = false;
 	export let model;
@@ -30,6 +34,8 @@
 	bind:show
 	align="end"
 	sideOffset={-2}
+	contentClass="model-selector-child-menu"
+	visualViewportAware={$mobile}
 	onOpenChange={(state) => {
 		if (state === false) {
 			onClose();
@@ -38,7 +44,7 @@
 >
 	<Tooltip
 		content={$i18n.t('More')}
-		className={($settings?.highContrastMode ?? false)
+		className={$mobile || ($settings?.highContrastMode ?? false)
 			? ''
 			: 'group-hover/item:opacity-100 opacity-0'}
 	>
@@ -46,11 +52,15 @@
 	</Tooltip>
 
 	<div slot="content">
-		<DropdownMenu className="min-w-[13.125rem] z-[9999999]">
+		<DropdownMenu
+			className="min-w-[13.125rem] z-[9999999] model-selector-child-menu {$mobile
+				? '[&>button]:min-h-11 [&>button]:h-auto [&>button]:px-3 [&>button]:text-sm [&>a]:min-h-11 [&>a]:h-auto [&>a]:px-3 [&>a]:text-sm'
+				: ''}"
+		>
 			{#if model?.preset || model?.info?.base_model_id ? model?.info?.user_id === $user?.id : $user?.role === 'admin'}
 				<button
 					type="button"
-					class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
+					class={menuItemClass}
 					on:click={(e) => {
 						e.stopPropagation();
 						e.preventDefault();
@@ -71,7 +81,7 @@
 				{#if $user?.role === 'admin' && (model?.owned_by === 'ollama' || providerSupportsDelete(model?.provider))}
 					<button
 						type="button"
-						class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
+						class={menuItemClass}
 						on:click={(e) => {
 							e.stopPropagation();
 							e.preventDefault();
@@ -105,7 +115,7 @@
 			<button
 				type="button"
 				aria-pressed={$pinnedModels.includes(model?.id)}
-				class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
+				class={menuItemClass}
 				on:click={(e) => {
 					e.stopPropagation();
 					e.preventDefault();
@@ -131,7 +141,7 @@
 
 			<button
 				type="button"
-				class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
+				class={menuItemClass}
 				on:click={(e) => {
 					e.stopPropagation();
 					e.preventDefault();
@@ -150,7 +160,7 @@
 
 				<button
 					type="button"
-					class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
+					class={menuItemClass}
 					on:click={(e) => {
 						e.stopPropagation();
 						e.preventDefault();

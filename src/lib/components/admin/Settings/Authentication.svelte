@@ -102,7 +102,7 @@
 
 		if (adminSaved && ldapSaved && oauthSaved) {
 			toast.success($i18n.t('Settings saved successfully!'));
-			await config.set(await getBackendConfig());
+			await config.set(await getBackendConfig(localStorage.token));
 		}
 	};
 

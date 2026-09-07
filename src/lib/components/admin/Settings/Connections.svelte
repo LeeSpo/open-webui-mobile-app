@@ -118,7 +118,7 @@
 		if (res) {
 			toast.success($i18n.t('Connections settings updated'));
 			await models.set(await getModels());
-			await config.set(await getBackendConfig());
+			await config.set(await getBackendConfig(localStorage.token));
 		}
 	};
 
@@ -217,7 +217,7 @@
 
 		dispatch('save');
 
-		await config.set(await getBackendConfig());
+		await config.set(await getBackendConfig(localStorage.token));
 	};
 </script>
 

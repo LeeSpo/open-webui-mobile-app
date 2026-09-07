@@ -150,7 +150,7 @@
 		});
 
 		if (res) {
-			backendConfig.set(await getBackendConfig());
+			backendConfig.set(await getBackendConfig(localStorage.token));
 
 			if (res.ENABLE_IMAGE_GENERATION) {
 				getModels();

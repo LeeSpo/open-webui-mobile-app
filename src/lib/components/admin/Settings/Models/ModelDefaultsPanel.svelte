@@ -105,7 +105,7 @@
 			config = res;
 			promptSuggestions = promptSuggestions.filter((p) => p.content !== '');
 			promptSuggestions = await setDefaultPromptSuggestions(localStorage.token, promptSuggestions);
-			await appConfig.set(await getBackendConfig());
+			await appConfig.set(await getBackendConfig(localStorage.token));
 			savedSnapshot = getSnapshot();
 			dirty = false;
 

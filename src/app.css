@@ -21,9 +21,11 @@ html {
 	word-break: break-word;
 	/* font-size scales the entire document via the same UI control */
 	font-size: calc(1rem * var(--app-text-scale, 1));
+	height: 100%;
 }
 
 body {
+	height: 100%;
 	padding-top: env(safe-area-inset-top);
 	padding-bottom: env(safe-area-inset-bottom);
 	padding-left: env(safe-area-inset-left);

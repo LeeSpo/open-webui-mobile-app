@@ -16,7 +16,13 @@ export {
 	persistServerBaseUrl,
 	probeServer
 } from './server-config';
-export { installNetworkGate, rewriteRelativeUrl, shouldRewritePath } from './network-gate';
+export {
+	installNetworkGate,
+	isLocalAssetPath,
+	rewriteRelativeUrl,
+	shouldAuthFetchMedia,
+	shouldRewritePath
+} from './network-gate';
 export { extractTokenFromAppUrl, oauthLoginUrl, startOAuthLogin } from './oauth';
 export { installNativeShell } from './native';
 

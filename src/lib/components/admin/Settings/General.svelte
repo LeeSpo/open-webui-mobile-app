@@ -77,7 +77,7 @@
 
 		await updateBanners();
 
-		await config.set(await getBackendConfig());
+		await config.set(await getBackendConfig(localStorage.token));
 
 		if (res) {
 			saveHandler();

@@ -35,13 +35,6 @@ export const installNativeShell = async () => {
 	}
 
 	try {
-		const { StatusBar } = await import('@capacitor/status-bar');
-		await StatusBar.setOverlaysWebView({ overlay: true });
-	} catch {
-		// Status bar plugin is unavailable in some WebView debug hosts.
-	}
-
-	try {
 		const { Keyboard, KeyboardResize } = await import('@capacitor/keyboard');
 		await Keyboard.setResizeMode({ mode: KeyboardResize.Native });
 	} catch {

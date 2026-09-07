@@ -2178,7 +2178,8 @@
 								</div>
 							</div>
 
-							<div class=" flex justify-between mt-0.5 mb-2 mx-0.5 max-w-full" dir="ltr">
+							<div class="{$mobile ? 'flex flex-col gap-0.5' : ''} mt-0.5 mb-2 mx-0.5 max-w-full">
+							<div class=" flex justify-between max-w-full" dir="ltr">
 								<div class="ml-1 self-end flex items-center flex-1 min-w-0">
 									<InputMenu
 										bind:files
@@ -2519,17 +2520,19 @@
 									</div>
 								</div>
 
-								<div class="self-end flex space-x-1 mr-1 min-w-0 gap-[0.03125rem]">
-									<div class="flex min-w-0 max-w-[10rem] items-center sm:max-w-[13rem]">
-										<ModelSelector
-											bind:this={modelSelector}
-											bind:selectedModels
-											showSetDefault={!history?.currentId}
-											placement="auto"
-											align="end"
-											triggerClassName="items-center gap-1.5 rounded-lg pl-2 pr-1.5 py-1 text-[0.8125rem] font-normal text-gray-600 transition-colors duration-100 hover:bg-gray-50/40 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/40 dark:hover:text-gray-200"
-										/>
-									</div>
+								<div class="self-end flex space-x-1 mr-1 shrink-0 gap-[0.03125rem]">
+									{#if !$mobile}
+										<div class="flex min-w-0 items-center max-w-[10rem] sm:max-w-[13rem]">
+											<ModelSelector
+												bind:this={modelSelector}
+												bind:selectedModels
+												showSetDefault={!history?.currentId}
+												placement="auto"
+												align="end"
+												triggerClassName="items-center gap-1.5 rounded-lg pl-2 pr-1.5 py-1 text-[0.8125rem] font-normal text-gray-600 transition-colors duration-100 hover:bg-gray-50/40 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/40 dark:hover:text-gray-200"
+											/>
+										</div>
+									{/if}
 
 									{#if hasChatVariables}
 										<Tooltip content={$i18n.t('Chat Variables')} placement="top">
@@ -2715,6 +2718,19 @@
 										{/if}
 									{/if}
 								</div>
+							</div>
+								{#if $mobile}
+									<div class="min-w-0 w-full px-1">
+										<ModelSelector
+											bind:this={modelSelector}
+											bind:selectedModels
+											showSetDefault={!history?.currentId}
+											placement="auto"
+											align="start"
+											triggerClassName="items-center gap-1.5 rounded-lg min-h-9 pl-2 pr-1.5 py-1.5 text-sm font-medium text-gray-700 transition-colors duration-100 hover:bg-gray-50/40 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-800/40 dark:hover:text-white"
+										/>
+									</div>
+								{/if}
 							</div>
 						</div>
 
