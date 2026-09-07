@@ -7,6 +7,18 @@ declare global {
 		// interface PageData {}
 		// interface Platform {}
 	}
+
+	interface Window {
+		Capacitor?: {
+			isNativePlatform?: () => boolean;
+		};
+		electronAPI?: {
+			send: (payload: unknown) => Promise<unknown>;
+			onEvent?: (handler: (event: unknown) => void) => void;
+			load?: (target: string) => void;
+		};
+		applyTheme?: () => void;
+	}
 }
 
 export {};

@@ -1,5 +1,6 @@
 <script>
 	import { goto } from '$app/navigation';
+	import { isNativeApp } from '$lib/runtime';
 	import { WEBUI_NAME, config } from '$lib/stores';
 	import { onMount, getContext } from 'svelte';
 
@@ -43,7 +44,7 @@
 						>
 					</div>
 
-					<div class=" mt-6 mx-auto relative group w-fit">
+					<div class=" mt-6 mx-auto relative group w-fit flex flex-col items-center gap-3">
 						<button
 							class="relative z-20 flex px-5 py-2 rounded-full bg-gray-100 hover:bg-gray-200 transition font-normal text-sm text-black"
 							on:click={() => {
@@ -52,6 +53,16 @@
 						>
 							{$i18n.t('Check Again')}
 						</button>
+						{#if isNativeApp()}
+							<button
+								class="relative z-20 flex px-5 py-2 rounded-full bg-gray-100 hover:bg-gray-200 transition font-normal text-sm text-black"
+								on:click={() => {
+									goto('/setup');
+								}}
+							>
+								{$i18n.t('Change server')}
+							</button>
+						{/if}
 					</div>
 				</div>
 			</div>

@@ -2,8 +2,10 @@
 	import { getVersionUpdates } from '$lib/apis';
 	import { getOllamaVersion } from '$lib/apis/ollama';
 	import { WEBUI_BUILD_HASH, WEBUI_VERSION } from '$lib/constants';
-	import { WEBUI_NAME, config, showChangelog } from '$lib/stores';
+	import { getServerBaseUrl, isNativeApp } from '$lib/runtime';
+	import { WEBUI_NAME, config, showChangelog, showSettings } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
+	import { goto } from '$app/navigation';
 	import { onMount, getContext } from 'svelte';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -55,7 +57,26 @@
 		<!-- LICENSE covers this Open WebUI About identifier.
 		Do not alter, remove, obscure, or replace it except as LICENSE permits:
 		https://docs.openwebui.com/license. -->
-		<UserSettingSection title={`${$WEBUI_NAME} ${$i18n.t('Version')}`} first>
+		{#if isNativeApp()}
+			<UserSettingSection title={$i18n.t('Server')} first>
+				<UserSettingRow description={$i18n.t('API, WebSocket, files, and models use this Open WebUI server.')}>
+					<div slot="label" class="flex flex-col text-xs text-gray-600 dark:text-gray-400">
+						<div class="break-all">{getServerBaseUrl()}</div>
+					</div>
+					<button
+						class={actionButtonClass}
+						on:click={() => {
+							showSettings.set(false);
+							goto('/setup');
+						}}
+					>
+						{$i18n.t('Change server')}
+					</button>
+				</UserSettingRow>
+			</UserSettingSection>
+		{/if}
+
+		<UserSettingSection title={`${$WEBUI_NAME} ${$i18n.t('Version')}`} first={!isNativeApp()}>
 			<UserSettingRow
 				description={$i18n.t('View the installed version and check release updates.')}
 			>

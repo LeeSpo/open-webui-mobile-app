@@ -6,6 +6,7 @@ import logging
 import re
 import sys
 import urllib
+import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -72,6 +73,7 @@ from open_webui.env import (
     ENABLE_OAUTH_ID_TOKEN_COOKIE,
     OAUTH_CLIENT_INFO_ENCRYPTION_KEY,
     OAUTH_MAX_SESSIONS_PER_USER,
+    WEBUI_APP_REDIRECT_URIS,
     WEBUI_AUTH_COOKIE_SAME_SITE,
     WEBUI_AUTH_COOKIE_SECURE,
 )
@@ -127,6 +129,35 @@ logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 OAUTH_RESOURCE_PARAMETER_MODES = {'auto', 'include', 'omit'}
+
+_BLOCKED_APP_REDIRECT_SCHEMES = {'http', 'https', 'javascript', 'data', 'file', 'about', 'vbscript'}
+
+
+def is_allowed_app_redirect(uri: str | None) -> bool:
+    if not uri or uri not in WEBUI_APP_REDIRECT_URIS:
+        return False
+    parsed = urllib.parse.urlparse(uri)
+    if not parsed.scheme or parsed.scheme.lower() in _BLOCKED_APP_REDIRECT_SCHEMES:
+        return False
+    return True
+
+
+def _store_app_redirect(request, uri: str | None) -> None:
+    try:
+        if uri and is_allowed_app_redirect(uri):
+            request.session['oauth_app_redirect'] = uri
+        else:
+            request.session.pop('oauth_app_redirect', None)
+    except Exception:
+        log.debug('Unable to persist oauth_app_redirect in session')
+
+
+def _consume_app_redirect(request) -> str | None:
+    try:
+        uri = request.session.pop('oauth_app_redirect', None)
+    except Exception:
+        return None
+    return uri if is_allowed_app_redirect(uri) else None
 
 OAUTH_RUNTIME_CONFIG = {
     'DEFAULT_USER_ROLE': ('ui.default_user_role', DEFAULT_USER_ROLE),
@@ -1845,6 +1876,8 @@ class OAuthManager:
         if OAUTH_AUTHORIZE_PARAMS:
             kwargs.update(OAUTH_AUTHORIZE_PARAMS)
 
+        _store_app_redirect(request, request.query_params.get('app_redirect'))
+
         return await client.authorize_redirect(request, redirect_uri, **kwargs)
 
     async def handle_callback(self, request, provider, response, db=None):
@@ -2153,10 +2186,18 @@ class OAuthManager:
         webui_url = await Config.get('webui.url')
         redirect_base_url = (str(webui_url or request.base_url)).rstrip('/')
         redirect_url = f'{redirect_base_url}/auth'
+        app_redirect = _consume_app_redirect(request)
 
         if error_message:
-            redirect_url = f'{redirect_url}?error={urllib.parse.quote_plus(error_message)}'
+            if app_redirect:
+                redirect_url = f'{app_redirect}?error={urllib.parse.quote_plus(str(error_message))}'
+            else:
+                redirect_url = f'{redirect_url}?error={urllib.parse.quote_plus(error_message)}'
             return RedirectResponse(url=redirect_url, headers=response.headers)
+
+        if app_redirect:
+            # Query string survives Android intent delivery better than a URL fragment.
+            redirect_url = f'{app_redirect}?token={urllib.parse.quote(jwt_token)}'
 
         response = RedirectResponse(url=redirect_url, headers=response.headers)
 

@@ -1,0 +1,23 @@
+def rewriteRepo = { repo ->
+	if (!(repo instanceof MavenArtifactRepository)) {
+		return
+	}
+	def url = repo.url.toString()
+	if (url.contains('dl.google.com') || url.contains('maven.google.com')) {
+		repo.setUrl('https://maven.aliyun.com/repository/google')
+	} else if (url.contains('repo.maven.apache.org') || url.contains('repo1.maven.org')) {
+		repo.setUrl('https://maven.aliyun.com/repository/central')
+	} else if (url.contains('plugins.gradle.org')) {
+		repo.setUrl('https://maven.aliyun.com/repository/gradle-plugin')
+	}
+}
+
+settingsEvaluated { settings ->
+	settings.pluginManagement.repositories.whenObjectAdded rewriteRepo
+	settings.pluginManagement.repositories.each rewriteRepo
+}
+
+gradle.beforeProject { project ->
+	project.buildscript.repositories.whenObjectAdded rewriteRepo
+	project.repositories.whenObjectAdded rewriteRepo
+}

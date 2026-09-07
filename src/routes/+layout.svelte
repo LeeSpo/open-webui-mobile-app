@@ -63,6 +63,7 @@
 	} from '$lib/utils/connections';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { bootstrapRuntime, isNativeApp, isSetupPath, needsServerSetup } from '$lib/runtime';
 	import {
 		bestMatchingLanguage,
 		cleanText,
@@ -105,7 +106,14 @@
 
 	setContext('i18n', i18n);
 
-	const bc = new BroadcastChannel('active-tab-channel');
+	let bc = null;
+	try {
+		if (typeof BroadcastChannel !== 'undefined') {
+			bc = new BroadcastChannel('active-tab-channel');
+		}
+	} catch (error) {
+		console.debug('BroadcastChannel unavailable', error);
+	}
 
 	let loaded = false;
 	let tokenTimer = null;
@@ -1062,6 +1070,8 @@
 	};
 
 	onMount(async () => {
+		await bootstrapRuntime();
+
 		const originalFetch = window.fetch.bind(window);
 		window.fetch = async (input, init) => {
 			const response = await originalFetch(input, init);
@@ -1145,11 +1155,13 @@
 		}
 
 		// Listen for messages on the BroadcastChannel
-		bc.onmessage = (event) => {
-			if (event.data === 'active') {
-				isLastActiveTab.set(false); // Another tab became active
-			}
-		};
+		if (bc) {
+			bc.onmessage = (event) => {
+				if (event.data === 'active') {
+					isLastActiveTab.set(false); // Another tab became active
+				}
+			};
+		}
 
 		// Set yourself as the last active tab when this tab is focused
 		const handlePageHidden = () => {
@@ -1163,7 +1175,7 @@
 			lastVisibleAt = Date.now();
 
 			isLastActiveTab.set(true); // This tab is now the active tab
-			bc.postMessage('active'); // Notify other tabs that this tab is active
+			bc?.postMessage('active'); // Notify other tabs that this tab is active
 
 			// Check token expiry when the tab becomes active
 			checkTokenExpiry();
@@ -1220,6 +1232,22 @@
 				$socket?.off('events:channel', channelEventHandler);
 			}
 		});
+
+		const onSetup = isSetupPath($page.url.pathname);
+		if (onSetup && !isNativeApp()) {
+			await goto('/');
+		} else if (needsServerSetup() && !onSetup) {
+			initI18n(localStorage?.locale);
+			await goto('/setup');
+			document.getElementById('splash-screen')?.remove();
+			loaded = true;
+			return;
+		} else if (onSetup) {
+			initI18n(localStorage?.locale);
+			document.getElementById('splash-screen')?.remove();
+			loaded = true;
+			return;
+		}
 
 		let backendConfig = null;
 		try {
@@ -1298,6 +1326,8 @@
 					}
 				}
 			}
+		} else if (isNativeApp() && needsServerSetup()) {
+			await goto('/setup');
 		} else {
 			// Redirect to /error when Backend Not Detected
 			await goto(`/error`);
@@ -1364,7 +1394,7 @@
 	}
 
 	onDestroy(() => {
-		bc.close();
+		bc?.close();
 	});
 </script>
 

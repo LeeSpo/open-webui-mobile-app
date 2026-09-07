@@ -1,20 +1,38 @@
 // import { version } from '../../package.json';
 
+import { getServerBaseUrl } from './runtime/server-config';
+
 // LICENSE covers this Open WebUI branding surface, including name, logo,
 // visual, textual, symbolic identifiers, metadata, and surrounding UI.
 // Do not alter, remove, obscure, or replace it except as LICENSE permits:
 // https://docs.openwebui.com/license.
 export const APP_NAME = 'Open WebUI';
 
-export const WEBUI_HOSTNAME = '';
-export const WEBUI_BASE_URL = '';
-export const WEBUI_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1`;
+// Live bindings so the Android client can point API/WebSocket traffic at a
+// remote Open WebUI server without touching every API module. On the web
+// these stay empty, matching the official same-origin deployment.
+export let WEBUI_HOSTNAME = '';
+export let WEBUI_BASE_URL = '';
+export let WEBUI_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1`;
 
-export const OLLAMA_API_BASE_URL = `${WEBUI_BASE_URL}/ollama`;
-export const OPENAI_API_BASE_URL = `${WEBUI_BASE_URL}/openai`;
-export const AUDIO_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/audio`;
-export const IMAGES_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/images`;
-export const RETRIEVAL_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/retrieval`;
+export let OLLAMA_API_BASE_URL = `${WEBUI_BASE_URL}/ollama`;
+export let OPENAI_API_BASE_URL = `${WEBUI_BASE_URL}/openai`;
+export let AUDIO_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/audio`;
+export let IMAGES_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/images`;
+export let RETRIEVAL_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/retrieval`;
+
+export const applyRuntimeBaseUrl = (baseUrl: string = '') => {
+	WEBUI_BASE_URL = baseUrl;
+	WEBUI_HOSTNAME = baseUrl ? new URL(baseUrl).host : '';
+	WEBUI_API_BASE_URL = `${baseUrl}/api/v1`;
+	OLLAMA_API_BASE_URL = `${baseUrl}/ollama`;
+	OPENAI_API_BASE_URL = `${baseUrl}/openai`;
+	AUDIO_API_BASE_URL = `${baseUrl}/api/v1/audio`;
+	IMAGES_API_BASE_URL = `${baseUrl}/api/v1/images`;
+	RETRIEVAL_API_BASE_URL = `${baseUrl}/api/v1/retrieval`;
+};
+
+applyRuntimeBaseUrl(getServerBaseUrl());
 
 // The version changes, but the promise must not. Let what
 // was built here keep its word across every release.

@@ -19,7 +19,11 @@
 		"i18n:parse": "i18next --config i18next-parser.config.ts && prettier --write \"src/lib/i18n/**/*.{js,json}\"",
 		"cy:open": "cypress open",
 		"test:frontend": "vitest --passWithNoTests",
-		"pyodide:fetch": "node scripts/prepare-pyodide.js"
+		"pyodide:fetch": "node scripts/prepare-pyodide.js",
+		"mobile:sync": "npm run build && npx cap sync android",
+		"mobile:open": "npx cap open android",
+		"mobile:android": "npx cap run android",
+		"mobile:apk": "npm run mobile:sync && cd android && ./gradlew assembleDebug --no-daemon -I gradle/init.aliyun.gradle"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "3.2.2",
@@ -53,6 +57,13 @@
 	"type": "module",
 	"dependencies": {
 		"@azure/msal-browser": "^4.5.0",
+		"@capacitor/android": "^7.6.9",
+		"@capacitor/app": "^7.1.2",
+		"@capacitor/browser": "^7.0.5",
+		"@capacitor/cli": "^7.6.9",
+		"@capacitor/core": "^7.6.9",
+		"@capacitor/keyboard": "^7.0.6",
+		"@capacitor/status-bar": "^7.0.6",
 		"@codemirror/lang-javascript": "^6.2.2",
 		"@codemirror/lang-python": "^6.1.6",
 		"@codemirror/language-data": "^6.5.1",
