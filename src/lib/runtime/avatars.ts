@@ -13,20 +13,18 @@ export const LOCAL_USER_AVATAR = '/user.png';
 const MODEL_AVATAR_PATH = '/api/v1/models/model/profile/image';
 const USER_AVATAR_PATTERN = /^\/api\/v1\/(?:users|channels\/webhooks)\/[^/]+\/profile\/image$/;
 
-// Tailwind 600/700 shades: all keep white text readable (>= 4.5:1 contrast).
-const PALETTE = [
-	'#dc2626',
-	'#c2410c',
-	'#a16207',
-	'#15803d',
-	'#0f766e',
-	'#0e7490',
-	'#2563eb',
-	'#4f46e5',
-	'#7c3aed',
-	'#c026d3',
-	'#db2777',
-	'#475569'
+// Model avatar color: the rendered letter picks one of 12 hue families, the
+// model id picks a shade inside that family. Every shade keeps >= 3:1 contrast
+// against both the light (#fff) and dark (#171717) app backgrounds, and the
+// text color (white or black) is whichever reads better on it (>= 4.5:1).
+const HUE_FAMILIES = 12;
+const SHADES = [
+	{ luminance: 0.14, saturation: 85, hueShift: -10 }, // deep vivid
+	{ luminance: 0.28, saturation: 40, hueShift: 12 }, // light muted
+	{ luminance: 0.205, saturation: 95, hueShift: 0 }, // mid vivid
+	{ luminance: 0.14, saturation: 35, hueShift: 12 }, // deep muted
+	{ luminance: 0.28, saturation: 90, hueShift: -12 }, // light vivid
+	{ luminance: 0.205, saturation: 50, hueShift: -6 } // mid soft
 ];
 
 const hash = (value: string): number => {
@@ -39,6 +37,130 @@ const hash = (value: string): number => {
 	return h >>> 0;
 };
 
+type Rgb = [number, number, number];
+
+const hslToRgb = (h: number, s: number, l: number): Rgb => {
+	const sat = s / 100;
+	const light = l / 100;
+	const a = sat * Math.min(light, 1 - light);
+	const f = (n: number) => {
+		const k = (n + h / 30) % 12;
+		return light - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+	};
+	return [f(0), f(8), f(4)];
+};
+
+export const relativeLuminance = ([r, g, b]: Rgb): number => {
+	const c = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+	return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b);
+};
+
+export const contrastRatio = (a: number, b: number): number =>
+	(Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+
+const toHex = (rgb: Rgb): string =>
+	'#' +
+	rgb
+		.map((v) =>
+			Math.round(Math.min(1, Math.max(0, v)) * 255)
+				.toString(16)
+				.padStart(2, '0')
+		)
+		.join('');
+
+export const hexToRgb = (hex: string): Rgb => [
+	parseInt(hex.slice(1, 3), 16) / 255,
+	parseInt(hex.slice(3, 5), 16) / 255,
+	parseInt(hex.slice(5, 7), 16) / 255
+];
+
+/** HSL color with the given hue/saturation whose luminance matches `target`. */
+const colorWithLuminance = (hue: number, saturation: number, target: number): string => {
+	let lo = 0;
+	let hi = 100;
+	for (let i = 0; i < 24; i++) {
+		const mid = (lo + hi) / 2;
+		if (relativeLuminance(hslToRgb(hue, saturation, mid)) < target) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+	return toHex(hslToRgb(hue, saturation, (lo + hi) / 2));
+};
+
+/** Hue family (0-11) of a rendered letter; Latin is case-insensitive, other scripts use the code point. */
+export const letterHueFamily = (letter: string): number =>
+	(letter.toUpperCase().codePointAt(0) ?? 0) % HUE_FAMILIES;
+
+const hashShade = (id: string): number => hash(id) % SHADES.length;
+
+// Per models-store snapshot: initial -> (model id -> shade).
+const shadeTables = new WeakMap<object, Map<string, Map<string, number>>>();
+
+/**
+ * Shade index inside the hue family. Loaded models sharing the same initial get
+ * distinct shades (ids sorted, each takes its hashed shade or the next free one),
+ * so e.g. GPT-4o and GPT-5 never look identical. Unknown models use the plain hash.
+ * Deterministic for a given model list; adding a model can only move models it collides with.
+ */
+export const modelShadeIndex = (id: string, initial?: string): number => {
+	const list = get(models);
+	if (!initial || !Array.isArray(list) || list.length === 0) {
+		return hashShade(id);
+	}
+
+	let byInitial = shadeTables.get(list);
+	if (!byInitial) {
+		byInitial = new Map();
+		shadeTables.set(list, byInitial);
+	}
+
+	let table = byInitial.get(initial);
+	if (!table) {
+		table = new Map();
+		const peers = list
+			.filter(
+				(model) =>
+					typeof model?.id === 'string' &&
+					typeof model?.name === 'string' &&
+					firstLetterOrDigit(model.name) &&
+					modelNameInitial(model.name) === initial
+			)
+			.map((model) => model.id)
+			.sort();
+		const used = new Set<number>();
+		for (const peer of new Set(peers)) {
+			let shade = hashShade(peer);
+			for (let i = 0; i < SHADES.length && used.has(shade); i++) {
+				shade = (shade + 1) % SHADES.length;
+			}
+			if (used.size >= SHADES.length) {
+				shade = hashShade(peer);
+			}
+			used.add(shade);
+			table.set(peer, shade);
+		}
+		byInitial.set(initial, table);
+	}
+
+	return table.get(id) ?? hashShade(id);
+};
+
+export type ModelAvatarColors = { fill: string; text: string; family: number; shade: number };
+
+export const modelAvatarColors = (letter: string, id: string): ModelAvatarColors => {
+	const family = letterHueFamily(letter);
+	const shade = modelShadeIndex(id, letter);
+	const { luminance, saturation, hueShift } = SHADES[shade];
+	const hue = (family * (360 / HUE_FAMILIES) + hueShift + 360) % 360;
+	const fill = colorWithLuminance(hue, saturation, luminance);
+	const fillLuminance = relativeLuminance(hexToRgb(fill));
+	const text =
+		contrastRatio(fillLuminance, 1) >= contrastRatio(fillLuminance, 0) ? '#ffffff' : '#000000';
+	return { fill, text, family, shade };
+};
+
 const escapeXml = (value: string): string =>
 	value.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -47,13 +169,12 @@ const firstLetterOrDigit = (value: string): string | undefined =>
 
 // Display name: "GPT-4o" -> "G", "通义千问" -> "通".
 export const modelNameInitial = (name: string): string =>
-	(firstLetterOrDigit(name) ?? '?').toLocaleUpperCase();
+	// toUpperCase (not locale-aware) so the same name maps to the same letter everywhere.
+	(firstLetterOrDigit(name) ?? '?').toUpperCase();
 
 // Id fallback: "openrouter/anthropic/claude-3" -> "C", "llama3.2:3b" -> "L".
 export const modelIdInitial = (id: string): string =>
 	modelNameInitial(id.split('/').filter(Boolean).pop() ?? id);
-
-export const modelAvatarColor = (id: string): string => PALETTE[hash(id) % PALETTE.length];
 
 /** Display name from the loaded `models` store, or undefined if not known yet. */
 export const modelDisplayName = (id: string): string | undefined => {
@@ -63,19 +184,20 @@ export const modelDisplayName = (id: string): string | undefined => {
 
 const modelAvatarCache = new Map<string, string>();
 
-/** Letter avatar: initial from the display name (id fallback), color keyed on the id. */
+/** Letter avatar: initial from the display name (id fallback); hue from that letter, shade from the id. */
 export const modelAvatarDataUrl = (id: string, name: string | undefined = modelDisplayName(id)) => {
 	const initial = name ? modelNameInitial(name) : modelIdInitial(id);
-	const key = `${id}\u0000${initial}`;
+	const key = `${initial}\u0000${modelShadeIndex(id, initial)}`;
 	const cached = modelAvatarCache.get(key);
 	if (cached) {
 		return cached;
 	}
 
+	const { fill, text } = modelAvatarColors(initial, id);
 	const svg =
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
-		`<circle cx="32" cy="32" r="32" fill="${modelAvatarColor(id)}"/>` +
-		`<text x="32" y="32" dy="0.35em" text-anchor="middle" fill="#fff" ` +
+		`<circle cx="32" cy="32" r="32" fill="${fill}"/>` +
+		`<text x="32" y="32" dy="0.35em" text-anchor="middle" fill="${text}" ` +
 		`font-family="system-ui,-apple-system,Roboto,sans-serif" font-size="30" font-weight="600">` +
 		`${escapeXml(initial)}</text></svg>`;
 	const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
