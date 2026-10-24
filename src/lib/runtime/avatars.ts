@@ -27,13 +27,22 @@ const SHADES = [
 	{ luminance: 0.205, saturation: 50, hueShift: -6 } // mid soft
 ];
 
+// Fixed seed: chosen once so common same-letter ids (gpt-4o/gpt-5, gemma/gemini, ...)
+// land on different shades. Changing it changes every model's color.
+const SHADE_SEED = 49;
+
 const hash = (value: string): number => {
-	// FNV-1a, 32-bit.
-	let h = 0x811c9dc5;
+	// FNV-1a, 32-bit, seeded, with the murmur3 fmix32 finalizer to mix the low bits.
+	let h = (0x811c9dc5 ^ SHADE_SEED) >>> 0;
 	for (let i = 0; i < value.length; i++) {
 		h ^= value.charCodeAt(i);
 		h = Math.imul(h, 0x01000193);
 	}
+	h ^= h >>> 16;
+	h = Math.imul(h, 0x85ebca6b);
+	h ^= h >>> 13;
+	h = Math.imul(h, 0xc2b2ae35);
+	h ^= h >>> 16;
 	return h >>> 0;
 };
 
@@ -93,65 +102,14 @@ const colorWithLuminance = (hue: number, saturation: number, target: number): st
 export const letterHueFamily = (letter: string): number =>
 	(letter.toUpperCase().codePointAt(0) ?? 0) % HUE_FAMILIES;
 
-const hashShade = (id: string): number => hash(id) % SHADES.length;
-
-// Per models-store snapshot: initial -> (model id -> shade).
-const shadeTables = new WeakMap<object, Map<string, Map<string, number>>>();
-
-/**
- * Shade index inside the hue family. Loaded models sharing the same initial get
- * distinct shades (ids sorted, each takes its hashed shade or the next free one),
- * so e.g. GPT-4o and GPT-5 never look identical. Unknown models use the plain hash.
- * Deterministic for a given model list; adding a model can only move models it collides with.
- */
-export const modelShadeIndex = (id: string, initial?: string): number => {
-	const list = get(models);
-	if (!initial || !Array.isArray(list) || list.length === 0) {
-		return hashShade(id);
-	}
-
-	let byInitial = shadeTables.get(list);
-	if (!byInitial) {
-		byInitial = new Map();
-		shadeTables.set(list, byInitial);
-	}
-
-	let table = byInitial.get(initial);
-	if (!table) {
-		table = new Map();
-		const peers = list
-			.filter(
-				(model) =>
-					typeof model?.id === 'string' &&
-					typeof model?.name === 'string' &&
-					firstLetterOrDigit(model.name) &&
-					modelNameInitial(model.name) === initial
-			)
-			.map((model) => model.id)
-			.sort();
-		const used = new Set<number>();
-		for (const peer of new Set(peers)) {
-			let shade = hashShade(peer);
-			for (let i = 0; i < SHADES.length && used.has(shade); i++) {
-				shade = (shade + 1) % SHADES.length;
-			}
-			if (used.size >= SHADES.length) {
-				shade = hashShade(peer);
-			}
-			used.add(shade);
-			table.set(peer, shade);
-		}
-		byInitial.set(initial, table);
-	}
-
-	return table.get(id) ?? hashShade(id);
-};
+/** Shade index inside the hue family: a pure function of the model id. */
+export const modelShadeIndex = (id: string): number => hash(id) % SHADES.length;
 
 export type ModelAvatarColors = { fill: string; text: string; family: number; shade: number };
 
 export const modelAvatarColors = (letter: string, id: string): ModelAvatarColors => {
 	const family = letterHueFamily(letter);
-	const shade = modelShadeIndex(id, letter);
+	const shade = modelShadeIndex(id);
 	const { luminance, saturation, hueShift } = SHADES[shade];
 	const hue = (family * (360 / HUE_FAMILIES) + hueShift + 360) % 360;
 	const fill = colorWithLuminance(hue, saturation, luminance);
@@ -187,7 +145,7 @@ const modelAvatarCache = new Map<string, string>();
 /** Letter avatar: initial from the display name (id fallback); hue from that letter, shade from the id. */
 export const modelAvatarDataUrl = (id: string, name: string | undefined = modelDisplayName(id)) => {
 	const initial = name ? modelNameInitial(name) : modelIdInitial(id);
-	const key = `${initial}\u0000${modelShadeIndex(id, initial)}`;
+	const key = `${initial}\u0000${modelShadeIndex(id)}`;
 	const cached = modelAvatarCache.get(key);
 	if (cached) {
 		return cached;

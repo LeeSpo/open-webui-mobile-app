@@ -158,20 +158,36 @@ describe('avatars', () => {
 		);
 	});
 
-	it('spreads loaded models with the same letter over distinct shades', () => {
-		const list = [
+	it('locks the exact colors of common models (regression guard)', () => {
+		const expected: Record<string, string> = {
+			'gpt-4o': '#c65398',
+			'gpt-5': '#c67a91',
+			gemma: '#f2067c',
+			gemini: '#a14e67'
+		};
+		for (const [id, fill] of Object.entries(expected)) {
+			expect(modelAvatarColors('G', id).fill).toBe(fill);
+		}
+		expect(new Set(Object.values(expected)).size).toBe(4);
+	});
+
+	it('does not depend on the loaded model list', () => {
+		const before = modelAvatarDataUrl('gpt-4o', 'GPT-4o');
+		setModels([
 			{ id: 'gpt-4o', name: 'GPT-4o' },
 			{ id: 'gpt-5', name: 'GPT-5' },
-			{ id: 'gemma3:27b', name: 'Gemma' },
-			{ id: 'gemini-2.5-pro', name: 'Gemini' }
-		];
-		setModels(list);
-		const fills = list.map(({ id }) => fillOf(modelAvatarDataUrl(id)));
-		expect(new Set(fills).size).toBe(list.length);
-		expect(new Set(list.map(({ id }) => modelShadeIndex(id, 'G'))).size).toBe(list.length);
-		// Stable for the same list.
-		setModels([...list].reverse());
-		expect(list.map(({ id }) => fillOf(modelAvatarDataUrl(id)))).toEqual(fills);
+			{ id: 'gemma', name: 'Gemma' }
+		]);
+		expect(modelAvatarDataUrl('gpt-4o', 'GPT-4o')).toBe(before);
+		expect(modelAvatarDataUrl('gpt-4o')).toBe(before);
+	});
+
+	it('keeps common same-letter ids on different shades', () => {
+		expect(modelShadeIndex('gpt-4o')).not.toBe(modelShadeIndex('gpt-5'));
+		expect(modelShadeIndex('gemma')).not.toBe(modelShadeIndex('gemini'));
+		expect(modelShadeIndex('claude-sonnet-4')).not.toBe(modelShadeIndex('claude-opus-4'));
+		expect(modelShadeIndex('qwen3')).not.toBe(modelShadeIndex('qwen-max'));
+		expect(modelShadeIndex('deepseek-chat')).not.toBe(modelShadeIndex('deepseek-reasoner'));
 	});
 
 	it('keeps every shade visible on light and dark backgrounds with readable text', () => {
