@@ -1,4 +1,4 @@
-import { localAvatarFor } from './avatars';
+import { cancelModelAvatar, resolveLocalAvatar, watchModelAvatar } from './avatars';
 import { getServerBaseUrl } from './server-config';
 
 export const REMOTE_PATH_PREFIXES = ['/api', '/ollama', '/openai', '/oauth', '/ws', '/cache'];
@@ -232,11 +232,15 @@ const installMediaSrcGate = (originalFetch: typeof fetch) => {
 		const baseUrl = getServerBaseUrl();
 		const rewritten = rewriteRelativeUrl(value, baseUrl, window.location.origin);
 		// Avatars/model icons never hit the network in the app: use local images.
-		const localAvatar = localAvatarFor(rewritten, baseUrl);
+		cancelModelAvatar(el);
+		const localAvatar = resolveLocalAvatar(rewritten, baseUrl);
 		if (localAvatar) {
 			mediaGeneration.set(el, (mediaGeneration.get(el) ?? 0) + 1);
 			revokeObjectUrl(el);
-			assign(localAvatar);
+			assign(localAvatar.src);
+			if (localAvatar.pendingModelId !== undefined) {
+				watchModelAvatar(el, localAvatar.pendingModelId, assign);
+			}
 			return;
 		}
 		if (shouldAuthFetchMedia(rewritten, baseUrl)) {

@@ -61,11 +61,17 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
           INPUT_TAG: ${{ github.event.inputs.tag_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        # versionCode = (M*1000000 + m*10000 + p*100 + b) * 1000 + dev
+        #   release v0.11.3.2 -> 110302000; dev build N on top of v0.11.3.1 -> 110301000 + N
+        # Dev builds (no tag) sit above the latest release and below the next one,
+        # so they install over the released app. dev must stay <= 999.
         run: |
           set -euo pipefail
-          PKG_VERSION="$(jq -r '.version' package.json)"
-          NAME="$PKG_VERSION"
           TAG=""
+          DEV=0
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
             TAG="$INPUT_TAG"
@@ -73,16 +79,27 @@ jobs:
           elif [ "$REF_TYPE" = "tag" ]; then
             TAG="$REF_NAME"
             NAME="$REF_NAME"
+          else
+            BASE="$(gh release view --json tagName -q .tagName 2>/dev/null || true)"
+            BASE="${BASE:-$(jq -r '.version' package.json)}"
+            DEV="$RUN_NUMBER"
+            if [ "$DEV" -gt 999 ]; then
+              echo "run_number $DEV exceeds the 3-digit dev slot of versionCode" >&2
+              exit 1
+            fi
+            NAME="${BASE}-dev.${DEV}"
           fi
 
           NAME="${NAME#mobile-}"
           NAME="${NAME#v}"
 
-          CODE="$(NAME="$NAME" python3 - <<'PY'
+          CODE="$(NAME="$NAME" DEV="$DEV" python3 - <<'PY'
           import os, re
-          parts = [int(p) for p in re.findall(r'\d+', os.environ['NAME'])]
+          base = os.environ['NAME'].split('-dev.')[0]
+          parts = [int(p) for p in re.findall(r'\d+', base)]
           parts = (parts + [0, 0, 0, 0])[:4]
-          print(parts[0] * 1000000 + parts[1] * 10000 + parts[2] * 100 + parts[3])
+          code = parts[0] * 1000000 + parts[1] * 10000 + parts[2] * 100 + parts[3]
+          print(code * 1000 + int(os.environ['DEV']))
           PY
           )"
 

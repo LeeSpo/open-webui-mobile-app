@@ -25,6 +25,7 @@ export {
 } from './network-gate';
 export { extractTokenFromAppUrl, oauthLoginUrl, startOAuthLogin } from './oauth';
 export { installNativeShell } from './native';
+export { avatarSrc } from './avatars';
 
 export const bootstrapRuntime = async () => {
 	applyRuntimeBaseUrl(getServerBaseUrl());
