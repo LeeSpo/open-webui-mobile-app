@@ -5,12 +5,7 @@
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { applyRuntimeBaseUrl, WEBUI_BASE_URL } from '$lib/constants';
-	import {
-		getServerBaseUrl,
-		isNativeApp,
-		persistServerBaseUrl,
-		probeServer
-	} from '$lib/runtime';
+	import { getServerBaseUrl, isNativeApp, persistServerBaseUrl, probeServer } from '$lib/runtime';
 
 	const i18n = getContext('i18n');
 
@@ -30,11 +25,15 @@
 					'The server blocked this origin. Add https://localhost to CORS_ALLOW_ORIGIN.'
 				);
 			case 'tls':
-				return $i18n.t('The TLS certificate was rejected. Use a trusted certificate or HTTP on LAN.');
+				return $i18n.t(
+					'The TLS certificate was rejected. Use a trusted certificate or HTTP on LAN.'
+				);
 			case 'http_error':
 				return $i18n.t('The server responded, but it does not look like Open WebUI.');
 			default:
-				return $i18n.t('Could not reach the server. Check the address and that the device is online.');
+				return $i18n.t(
+					'Could not reach the server. Check the address and that the device is online.'
+				);
 		}
 	};
 
@@ -94,11 +93,7 @@
 		<div class="absolute inset-0 bg-white dark:bg-black"></div>
 		<div class="relative z-10 flex min-h-screen w-full items-center justify-center px-8">
 			<div class="w-full max-w-md pb-10 text-center">
-				<img
-					src="/static/favicon.png"
-					alt="Open WebUI"
-					class="mx-auto mb-6 size-20 rounded-full"
-				/>
+				<img src="/static/favicon.png" alt="Open WebUI" class="mx-auto mb-6 size-20 rounded-full" />
 
 				<h1 class="text-2xl font-normal">
 					{changing ? $i18n.t('Change server') : $i18n.t('Connect to Open WebUI')}

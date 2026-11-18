@@ -1,4 +1,7 @@
 <script lang="ts">
+	import Comments from '$lib/components/comments/Comments.svelte';
+	import type { CommentsRequest } from '$lib/components/comments/CommentsPanel.svelte';
+	let comments: CommentsRequest | null = null;
 	import { marked } from 'marked';
 	import Fuse from 'fuse.js';
 
@@ -11,7 +14,7 @@
 	import { flyAndScale } from '$lib/utils/transitions';
 	import { fly } from 'svelte/transition';
 
-	import { createEventDispatcher, onMount, onDestroy, getContext, tick } from 'svelte';
+	import { onMount, onDestroy, getContext, tick } from 'svelte';
 
 	import { deleteModel, getOllamaVersion, pullModel } from '$lib/apis/ollama';
 	import { deleteModelById } from '$lib/apis/models';
@@ -27,14 +30,17 @@
 		user,
 		MODEL_DOWNLOAD_POOL,
 		mobile,
-		models,
-		temporaryChatEnabled,
 		settings,
 		config,
-		showSettings
+		showSettings,
+		visibleControls
 	} from '$lib/stores';
 	import { toast } from 'svelte-sonner';
 	import { capitalizeFirstLetter, sanitizeResponseContent, splitStream } from '$lib/utils';
+	import {
+		resolveLocalizedModelDescription,
+		resolveLocalizedModelName
+	} from '$lib/utils/localizedContent';
 	import { getModels } from '$lib/apis';
 
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
@@ -49,19 +55,22 @@
 	import TagSelector from '$lib/components/workspace/common/TagSelector.svelte';
 
 	import ModelItem from './ModelItem.svelte';
+	import { getChatContext } from '$lib/components/chat/context';
 
-	const i18n = getContext('i18n');
-	const dispatch = createEventDispatcher();
+	const { models, temporary } = getChatContext();
+
+	const i18n: any = getContext('i18n');
 
 	export let id = '';
 	export let value: string | null = '';
 	export let values: string[] | null = null;
+	export let onModelSelect: (models: string[]) => void = () => {};
 	export let compareEnabled = false;
 	export let multipleEnabled = false;
 	export let disabled = false;
-	export let placeholder = $i18n.t('Select a model');
+	export let placeholder: string | undefined = undefined;
 	export let searchEnabled = true;
-	export let searchPlaceholder = $i18n.t('Search a model');
+	export let searchPlaceholder: string | undefined = undefined;
 	export let selectionOnly = false;
 	export let includeHidden = false;
 
@@ -346,7 +355,19 @@
 	};
 	const focusChatInput = () => {
 		if (!$mobile) {
-			document.getElementById('chat-input')?.focus();
+			document
+				.getElementById(
+					triggerElement?.closest('[data-composer-id]')?.getAttribute('data-composer-id') ??
+						'chat-input'
+				)
+				?.focus();
+		}
+
+		if (
+			$settings?.highContrastMode &&
+			(document.activeElement === document.body || contentElement?.contains(document.activeElement))
+		) {
+			document.getElementById(`model-selector-${id}-button`)?.focus();
 		}
 	};
 
@@ -363,9 +384,7 @@
 				setProviderDownloadConnections();
 			}
 			resetView();
-			updatePosition();
 			await tick();
-			updatePosition();
 			for (const delay of [0, 50, 150]) {
 				window.setTimeout(focusSearchInput, delay);
 			}
@@ -381,8 +400,8 @@
 		}
 	};
 
-	const handlePointerDown = (e: PointerEvent) => {
-		if (!show) return;
+	const handleWindowClick = (e: MouseEvent) => {
+		if (!show || e.detail === 0) return;
 		const target = e.target as Node;
 		if (
 			(triggerElement && triggerElement.contains(target)) ||
@@ -397,24 +416,32 @@
 
 	const handleKeydown = (e: KeyboardEvent) => {
 		if (show && e.key === 'Escape') {
+			if ((e.target as HTMLElement).closest?.('.model-selector-child-menu')) return;
 			e.preventDefault();
 			e.stopPropagation();
 			closeSelector();
 		}
 	};
 
-	let tags = [];
+	$: tags = Array.from(
+		new Set(
+			(items ?? [])
+				.filter((item) => includeHidden || !(item.model?.info?.meta?.hidden ?? false))
+				.flatMap((item) => item.model?.tags ?? [])
+				.map((tag) => tag.name.toLowerCase())
+		)
+	).sort((a, b) => a.localeCompare(b));
 
 	let selectedModel = '';
 	$: selectedValues = values ?? (value ? [value] : []);
-	$: primaryValue = selectedValues[0] ?? value ?? '';
+	$: primaryValue = selectedValues[0] ?? '';
 	$: selectedModel = items.find((item) => item.value === primaryValue) ?? '';
 	$: selectedCount = selectedValues.filter(Boolean).length;
 	$: triggerLabel = selectedModel
 		? compareEnabled && selectedCount > 1
 			? `${selectedModel.label} +${selectedCount - 1}`
 			: selectedModel.label
-		: placeholder;
+		: (placeholder ?? $i18n.t('Select a model'));
 
 	let searchValue = '';
 
@@ -445,13 +472,13 @@
 	const getProviderPoolKey = (connection, model: string) =>
 		`${connection.provider}:${connection.idx}:${model}`;
 
-	const fuse = new Fuse(
+	$: fuse = new Fuse(
 		items.map((item) => {
 			const _item = {
 				...item,
-				modelName: item.model?.name,
+				modelName: resolveLocalizedModelName(item.model, $i18n.language),
 				tags: (item.model?.tags ?? []).map((tag) => tag.name).join(' '),
-				desc: item.model?.info?.meta?.description
+				desc: resolveLocalizedModelDescription(item.model, $i18n.language)
 			};
 			return _item;
 		}),
@@ -460,26 +487,6 @@
 			threshold: 0.4
 		}
 	);
-
-	const updateFuse = () => {
-		if (fuse) {
-			fuse.setCollection(
-				items.map((item) => {
-					const _item = {
-						...item,
-						modelName: item.model?.name,
-						tags: (item.model?.tags ?? []).map((tag) => tag.name).join(' '),
-						desc: item.model?.info?.meta?.description
-					};
-					return _item;
-				})
-			);
-		}
-	};
-
-	$: if (items) {
-		updateFuse();
-	}
 
 	$: filteredItems = (
 		searchValue
@@ -504,8 +511,6 @@
 							return item.model?.connection_type === 'local';
 						} else if (selectedConnectionType === 'external') {
 							return item.model?.connection_type === 'external';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
 						}
 					})
 			: items
@@ -524,8 +529,6 @@
 							return item.model?.connection_type === 'local';
 						} else if (selectedConnectionType === 'external') {
 							return item.model?.connection_type === 'external';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
 						}
 					})
 	).filter((item) => includeHidden || !(item.model?.info?.meta?.hidden ?? false));
@@ -584,9 +587,6 @@
 		...(items.find((item) => item.model?.connection_type === 'external')
 			? [{ value: 'connection:external', label: $i18n.t('External') }]
 			: []),
-		...(items.find((item) => item.model?.direct)
-			? [{ value: 'connection:direct', label: $i18n.t('Direct') }]
-			: []),
 		...tags.map((tag) => ({ value: `tag:${tag}`, label: tag }))
 	];
 
@@ -595,6 +595,17 @@
 		: selectedTag
 			? `tag:${selectedTag}`
 			: '';
+
+	$: if (selectedTag && !modelFilterItems.some((item) => item.value === `tag:${selectedTag}`)) {
+		selectedTag = '';
+	}
+
+	$: if (
+		selectedConnectionType &&
+		!modelFilterItems.some((item) => item.value === `connection:${selectedConnectionType}`)
+	) {
+		selectedConnectionType = '';
+	}
 
 	const setModelFilter = (filterValue: string) => {
 		if (!filterValue) {
@@ -635,7 +646,6 @@
 		await tick();
 		const item = document.querySelector(`[data-arrow-selected="true"]`);
 		item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
-		schedulePositionUpdate();
 	};
 
 	const setCompareEnabled = (enabled: boolean) => {
@@ -644,6 +654,7 @@
 		if (!enabled && values) {
 			values = [primaryValue || selectedValues[0] || ''];
 			value = values[0];
+			onModelSelect(values);
 		}
 	};
 
@@ -660,11 +671,13 @@
 
 				values = nextValues.length ? nextValues : [item.value];
 				value = values[0];
+				onModelSelect(values);
 				return;
 			}
 
 			values = [item.value];
 			value = item.value;
+			onModelSelect(values);
 			show = false;
 			window.setTimeout(focusChatInput, 0);
 			return;
@@ -790,12 +803,7 @@
 					})
 				);
 
-				models.set(
-					await getModels(
-						localStorage.token,
-						$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-					)
-				);
+				models.set(await getModels(localStorage.token));
 			} else {
 				toast.error($i18n.t('Download canceled'));
 			}
@@ -918,12 +926,7 @@
 						modelName: model
 					})
 				);
-				models.set(
-					await getModels(
-						localStorage.token,
-						$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-					)
-				);
+				models.set(await getModels(localStorage.token));
 			}
 		} catch (error) {
 			if (!controller.signal.aborted) {
@@ -973,15 +976,6 @@
 	};
 
 	onMount(() => {
-		if (items) {
-			tags = items
-				.filter((item) => includeHidden || !(item.model?.info?.meta?.hidden ?? false))
-				.flatMap((item) => item.model?.tags ?? [])
-				.map((tag) => tag.name.toLowerCase());
-			// Remove duplicates and sort
-			tags = Array.from(new Set(tags)).sort((a, b) => a.localeCompare(b));
-		}
-
 		window.addEventListener('scroll', handleScroll, true);
 		window.visualViewport?.addEventListener('resize', scheduleSettledPositionUpdates);
 		window.visualViewport?.addEventListener('scroll', schedulePositionUpdate);
@@ -1014,7 +1008,6 @@
 			MODEL_DOWNLOAD_POOL.set({
 				...$MODEL_DOWNLOAD_POOL
 			});
-			await deleteModel(localStorage.token, model);
 			toast.success($i18n.t('{{model}} download has been canceled', { model: model }));
 		} else {
 			const displayModel = $MODEL_DOWNLOAD_POOL[model]?.model ?? model;
@@ -1037,12 +1030,7 @@
 
 		if (res) {
 			toast.success($i18n.t('Model unloaded successfully'));
-			models.set(
-				await getModels(
-					localStorage.token,
-					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				)
-			);
+			models.set(await getModels(localStorage.token));
 		}
 	};
 
@@ -1050,6 +1038,7 @@
 	let deleteModelTarget: any = null;
 
 	const deleteModelHandler = async (model: any) => {
+		show = false;
 		deleteModelTarget = model;
 		showDeleteConfirm = true;
 	};
@@ -1086,12 +1075,7 @@
 				value = '';
 			}
 
-			models.set(
-				await getModels(
-					localStorage.token,
-					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				)
-			);
+			models.set(await getModels(localStorage.token));
 		}
 
 		deleteModelTarget = null;
@@ -1145,13 +1129,9 @@
 	}}
 />
 
-<svelte:window
-	on:pointerdown={handlePointerDown}
-	on:keydown={handleKeydown}
-	on:resize={scheduleSettledPositionUpdates}
-/>
+<svelte:window on:click|capture={handleWindowClick} on:keydown|capture={handleKeydown} />
 
-<div class="relative w-full">
+<div class="relative flex w-full">
 	<button
 		bind:this={triggerElement}
 		class="focus-ring relative w-full {($settings?.highContrastMode ?? false)
@@ -1159,7 +1139,7 @@
 			: 'outline-hidden focus:outline-hidden'}"
 		aria-label={selectedModel
 			? $i18n.t('Selected model: {{modelName}}', { modelName: triggerLabel })
-			: placeholder}
+			: (placeholder ?? $i18n.t('Select a model'))}
 		aria-haspopup="listbox"
 		aria-expanded={show}
 		id="model-selector-{id}-button"
@@ -1173,12 +1153,7 @@
 				? 'dark:placeholder-gray-100 placeholder-gray-800'
 				: 'placeholder-gray-400'}"
 			on:mouseenter={async () => {
-				models.set(
-					await getModels(
-						localStorage.token,
-						$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-					)
-				);
+				models.set(await getModels(localStorage.token));
 			}}
 		>
 			<span class="min-w-0 flex-1 truncate">{triggerLabel}</span>
@@ -1201,7 +1176,7 @@
 							id="model-search-input"
 							bind:value={searchValue}
 							class="h-10 w-full bg-transparent text-sm font-normal outline-hidden placeholder:text-gray-400 dark:placeholder:text-gray-500"
-							placeholder={searchPlaceholder}
+							placeholder={searchPlaceholder ?? $i18n.t('Search a model')}
 							autocomplete="off"
 							aria-label={$i18n.t('Search In Models')}
 							on:keydown={handleSearchKeydown}
@@ -1259,7 +1234,7 @@
 						id="model-search-input"
 						bind:value={searchValue}
 						class="w-full bg-transparent text-[0.8125rem] font-normal outline-hidden placeholder:text-gray-400 dark:placeholder:text-gray-500"
-						placeholder={searchPlaceholder}
+						placeholder={searchPlaceholder ?? $i18n.t('Search a model')}
 						autocomplete="off"
 						aria-label={$i18n.t('Search In Models')}
 						on:keydown={handleSearchKeydown}
@@ -1364,6 +1339,7 @@
 							{item}
 							{index}
 							value={primaryValue}
+							onComment={(request) => (comments = request)}
 							{pinModelHandler}
 							{unloadModelHandler}
 							{deleteModelHandler}
@@ -1518,7 +1494,7 @@
 			{/each}
 		</div>
 
-		{#if showSetDefault}
+		{#if showSetDefault && $visibleControls['models.set_default']}
 			<div
 				class="flex shrink-0 items-center {$mobile
 					? 'border-t border-gray-100 px-4 py-2 dark:border-gray-800'
@@ -1565,7 +1541,7 @@
 						: 'height 200ms ease'};"
 					role="dialog"
 					aria-modal="true"
-					aria-label={placeholder}
+					aria-label={placeholder ?? $i18n.t('Select a model')}
 					in:fly={{ y: 80, duration: 180 }}
 				>
 					<button
@@ -1598,3 +1574,5 @@
 		{/if}
 	{/if}
 </div>
+
+<Comments modal bind:view={comments} />

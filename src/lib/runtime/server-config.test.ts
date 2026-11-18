@@ -15,10 +15,11 @@ const memory = new Map<string, string>();
 
 const setNative = (native: boolean) => {
 	vi.stubGlobal('window', globalThis);
-	(globalThis as typeof globalThis & { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor =
-		{
-			isNativePlatform: () => native
-		};
+	(
+		globalThis as typeof globalThis & { Capacitor?: { isNativePlatform: () => boolean } }
+	).Capacitor = {
+		isNativePlatform: () => native
+	};
 };
 
 beforeEach(() => {

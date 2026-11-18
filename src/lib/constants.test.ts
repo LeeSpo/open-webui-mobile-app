@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
 	AUDIO_API_BASE_URL,
+	VIDEOS_API_BASE_URL,
 	OLLAMA_API_BASE_URL,
 	OPENAI_API_BASE_URL,
 	WEBUI_API_BASE_URL,
@@ -23,6 +24,7 @@ describe('applyRuntimeBaseUrl', () => {
 		expect(OLLAMA_API_BASE_URL).toBe('/ollama');
 		expect(OPENAI_API_BASE_URL).toBe('/openai');
 		expect(AUDIO_API_BASE_URL).toBe('/api/v1/audio');
+		expect(VIDEOS_API_BASE_URL).toBe('/api/v1/videos');
 	});
 
 	it('updates live bindings used by existing API modules', () => {
@@ -31,5 +33,6 @@ describe('applyRuntimeBaseUrl', () => {
 		expect(WEBUI_HOSTNAME).toBe('chat.example.com');
 		expect(WEBUI_API_BASE_URL).toBe('https://chat.example.com/api/v1');
 		expect(OLLAMA_API_BASE_URL).toBe('https://chat.example.com/ollama');
+		expect(VIDEOS_API_BASE_URL).toBe('https://chat.example.com/api/v1/videos');
 	});
 });

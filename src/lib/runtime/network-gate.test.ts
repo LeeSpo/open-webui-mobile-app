@@ -52,6 +52,12 @@ describe('network-gate', () => {
 		expect(rewriteRelativeUrl(`${SERVER}/favicon.png`, SERVER, ORIGIN)).toBe('/favicon.png');
 		expect(isLocalAssetPath('/favicon.png')).toBe(true);
 		expect(isLocalAssetPath('/assets/emojis/smile.svg')).toBe(true);
+		expect(rewriteRelativeUrl(`${SERVER}/visualizations/chart.umd.min.js`, SERVER, ORIGIN)).toBe(
+			'/visualizations/chart.umd.min.js'
+		);
+		expect(
+			rewriteRelativeUrl(`${SERVER}/licenses/encryption/THIRD_PARTY_LICENSES.txt`, SERVER, ORIGIN)
+		).toBe('/licenses/encryption/THIRD_PARTY_LICENSES.txt');
 	});
 
 	it('keeps authenticated API image URLs on the server', () => {

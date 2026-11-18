@@ -19,6 +19,7 @@ export let OLLAMA_API_BASE_URL = `${WEBUI_BASE_URL}/ollama`;
 export let OPENAI_API_BASE_URL = `${WEBUI_BASE_URL}/openai`;
 export let AUDIO_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/audio`;
 export let IMAGES_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/images`;
+export let VIDEOS_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/videos`;
 export let RETRIEVAL_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/retrieval`;
 
 export const applyRuntimeBaseUrl = (baseUrl: string = '') => {
@@ -29,15 +30,23 @@ export const applyRuntimeBaseUrl = (baseUrl: string = '') => {
 	OPENAI_API_BASE_URL = `${baseUrl}/openai`;
 	AUDIO_API_BASE_URL = `${baseUrl}/api/v1/audio`;
 	IMAGES_API_BASE_URL = `${baseUrl}/api/v1/images`;
+	VIDEOS_API_BASE_URL = `${baseUrl}/api/v1/videos`;
 	RETRIEVAL_API_BASE_URL = `${baseUrl}/api/v1/retrieval`;
 };
 
 applyRuntimeBaseUrl(getServerBaseUrl());
 
+export const COMMUNITY_ORIGINS = [
+	'https://openwebui.com',
+	'https://www.openwebui.com',
+	'http://localhost:9999'
+];
+
 // The version changes, but the promise must not. Let what
 // was built here keep its word across every release.
 export const WEBUI_VERSION = APP_VERSION;
 export const WEBUI_BUILD_HASH = APP_BUILD_HASH;
+export const WEBUI_BUILD_CHANNEL = APP_BUILD_CHANNEL;
 export const REQUIRED_OLLAMA_VERSION = '0.1.16';
 
 export const SUPPORTED_FILE_TYPE = [
@@ -125,11 +134,12 @@ export const SUPPORTED_FILE_EXTENSIONS = [
 ];
 
 export const DEFAULT_CAPABILITIES = {
-	file_context: true,
+	file_context: undefined as boolean | undefined,
 	vision: true,
 	file_upload: true,
 	web_search: true,
 	image_generation: true,
+	video_generation: true,
 	code_interpreter: true,
 	terminal: true,
 	citations: true,

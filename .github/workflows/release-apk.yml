@@ -66,7 +66,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         # versionCode = (M*1000000 + m*10000 + p*100 + b) * 1000 + dev
         #   release v0.11.3.2 -> 110302000; dev build N on top of v0.11.3.1 -> 110301000 + N
-        # Dev builds (no tag) sit above the latest release and below the next one,
+        # Dev builds use the checked-in upstream version, not an older published APK tag.
+        # Their versionCode sits above earlier upstream versions,
         # so they install over the released app. dev must stay <= 999.
         run: |
           set -euo pipefail
@@ -80,8 +81,7 @@ jobs:
             TAG="$REF_NAME"
             NAME="$REF_NAME"
           else
-            BASE="$(gh release view --json tagName -q .tagName 2>/dev/null || true)"
-            BASE="${BASE:-$(jq -r '.version' package.json)}"
+            BASE="$(jq -r '.version' package.json)"
             DEV="$RUN_NUMBER"
             if [ "$DEV" -gt 999 ]; then
               echo "run_number $DEV exceeds the 3-digit dev slot of versionCode" >&2
@@ -109,7 +109,10 @@ jobs:
           echo "Resolved versionName=${NAME} versionCode=${CODE} tag=${TAG}"
 
       - name: Install dependencies
-        run: npm ci --force
+        run: npm ci --force --onnxruntime-node-install-cuda=skip
+
+      - name: Test mobile runtime
+        run: npx vitest run src/lib/runtime src/lib/constants.test.ts src/lib/apis/index.test.ts
 
       - name: Build web application
         run: npm run build

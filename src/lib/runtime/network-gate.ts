@@ -10,6 +10,8 @@ export const LOCAL_PATH_PREFIXES = [
 	'/audio',
 	'/pyodide',
 	'/wasm',
+	'/visualizations',
+	'/licenses',
 	'/sql.js',
 	'/static',
 	'/manifest.json',

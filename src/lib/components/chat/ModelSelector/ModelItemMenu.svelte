@@ -1,22 +1,29 @@
 <script lang="ts">
+	import type { CommentsRequest } from '$lib/components/comments/CommentsPanel.svelte';
+	export let onComment: (request: CommentsRequest) => void;
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import DropdownMenu from '$lib/components/common/DropdownMenu.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import CommentButton from '$lib/components/comments/CommentButton.svelte';
 	import Pin from '$lib/components/icons/Pin.svelte';
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
 	import Link from '$lib/components/icons/Link.svelte';
 	import Pencil from '$lib/components/icons/Pencil.svelte';
-	import { config, mobile, pinnedModels, settings, showSettings, user } from '$lib/stores';
+	import {
+		config,
+		mobile,
+		pinnedModels,
+		settings,
+		showSettings,
+		user,
+		visibleControls
+	} from '$lib/stores';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 
 	const i18n = getContext('i18n');
-
-	$: menuItemClass = $mobile
-		? 'select-none flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition'
-		: 'select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition';
 
 	export let show = false;
 	export let model;
@@ -24,18 +31,31 @@
 	export let pinModelHandler: (modelId: string) => void = () => {};
 	export let copyLinkHandler: Function = () => {};
 	export let deleteModelHandler: Function = () => {};
+	export let onEdit: () => void = () => {};
 
 	export let onClose: Function = () => {};
 
+	$: canEdit =
+		model?.owned_by !== 'terminal' &&
+		(model?.preset || model?.info?.base_model_id
+			? model?.info?.user_id === $user?.id
+			: $user?.role === 'admin');
 	const providerSupportsDelete = (provider = '') => provider === 'llama.cpp';
+	$: showComments =
+		$config?.features?.enable_comments &&
+		$user &&
+		model?.id &&
+		!model?.owner_id &&
+		!model?.arena &&
+		(model?.info || $user?.role === 'admin');
 </script>
 
 <Dropdown
+	visualViewportAware={$mobile}
 	bind:show
 	align="end"
 	sideOffset={-2}
 	contentClass="model-selector-child-menu"
-	visualViewportAware={$mobile}
 	onOpenChange={(state) => {
 		if (state === false) {
 			onClose();
@@ -44,9 +64,9 @@
 >
 	<Tooltip
 		content={$i18n.t('More')}
-		className={$mobile || ($settings?.highContrastMode ?? false)
+		className={($settings?.highContrastMode ?? false)
 			? ''
-			: 'group-hover/item:opacity-100 opacity-0'}
+			: 'group-hover/item:opacity-100 group-focus-within/item:opacity-100 opacity-0'}
 	>
 		<slot />
 	</Tooltip>
@@ -57,10 +77,10 @@
 				? '[&>button]:min-h-11 [&>button]:h-auto [&>button]:px-3 [&>button]:text-sm [&>a]:min-h-11 [&>a]:h-auto [&>a]:px-3 [&>a]:text-sm'
 				: ''}"
 		>
-			{#if model?.preset || model?.info?.base_model_id ? model?.info?.user_id === $user?.id : $user?.role === 'admin'}
+			{#if canEdit}
 				<button
 					type="button"
-					class={menuItemClass}
+					class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
 					on:click={(e) => {
 						e.stopPropagation();
 						e.preventDefault();
@@ -71,17 +91,33 @@
 							showSettings.set({ tab: 'admin:models', state: { id: model?.id ?? null } });
 						}
 						show = false;
+						onEdit();
 					}}
 				>
 					<Pencil className="size-3.5" />
 
 					<div class="flex items-center">{$i18n.t('Edit')}</div>
 				</button>
+			{/if}
 
+			{#if showComments}
+				<CommentButton
+					{onComment}
+					menu
+					resource={{ resource_type: 'model', resource_id: model?.id }}
+					className="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
+					onOpen={() => {
+						show = false;
+						onEdit();
+					}}
+				/>
+			{/if}
+
+			{#if canEdit}
 				{#if $user?.role === 'admin' && (model?.owned_by === 'ollama' || providerSupportsDelete(model?.provider))}
 					<button
 						type="button"
-						class={menuItemClass}
+						class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
 						on:click={(e) => {
 							e.stopPropagation();
 							e.preventDefault();
@@ -112,36 +148,38 @@
 				<hr class="border-gray-50 dark:border-gray-800/30 mx-1 my-0.5" />
 			{/if}
 
-			<button
-				type="button"
-				aria-pressed={$pinnedModels.includes(model?.id)}
-				class={menuItemClass}
-				on:click={(e) => {
-					e.stopPropagation();
-					e.preventDefault();
+			{#if $visibleControls['models.pin']}
+				<button
+					type="button"
+					aria-pressed={$pinnedModels.includes(model?.id)}
+					class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
+					on:click={(e) => {
+						e.stopPropagation();
+						e.preventDefault();
 
-					pinModelHandler(model?.id);
-					show = false;
-				}}
-			>
-				{#if $pinnedModels.includes(model?.id)}
-					<PinSlash className="size-3.5" />
-				{:else}
-					<Pin className="size-3.5" />
-				{/if}
-
-				<div class="flex items-center">
+						pinModelHandler(model?.id);
+						show = false;
+					}}
+				>
 					{#if $pinnedModels.includes(model?.id)}
-						{$i18n.t('Hide from Sidebar')}
+						<PinSlash className="size-3.5" />
 					{:else}
-						{$i18n.t('Keep in Sidebar')}
+						<Pin className="size-3.5" />
 					{/if}
-				</div>
-			</button>
+
+					<div class="flex items-center">
+						{#if $pinnedModels.includes(model?.id)}
+							{$i18n.t('Hide from Sidebar')}
+						{:else}
+							{$i18n.t('Keep in Sidebar')}
+						{/if}
+					</div>
+				</button>
+			{/if}
 
 			<button
 				type="button"
-				class={menuItemClass}
+				class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
 				on:click={(e) => {
 					e.stopPropagation();
 					e.preventDefault();
@@ -157,10 +195,12 @@
 
 			{#if $config?.features.enable_community_sharing}
 				<hr class="border-gray-50 dark:border-gray-800/30 mx-1 my-0.5" />
+			{/if}
 
+			{#if $config?.features.enable_community_sharing}
 				<button
 					type="button"
-					class={menuItemClass}
+					class="select-none flex h-[1.6875rem] w-full items-center gap-2 rounded-xl px-2 text-[0.8125rem] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition"
 					on:click={(e) => {
 						e.stopPropagation();
 						e.preventDefault();
