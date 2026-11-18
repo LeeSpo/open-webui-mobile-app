@@ -920,9 +920,7 @@ ENABLE_OAUTH_BACKCHANNEL_LOGOUT = os.getenv('ENABLE_OAUTH_BACKCHANNEL_LOGOUT', '
 
 # Semicolon-separated app scheme URIs that OAuth may redirect to after login.
 # Empty keeps the existing web callback. Example: openwebui://auth
-WEBUI_APP_REDIRECT_URIS = [
-    uri.strip() for uri in os.getenv('WEBUI_APP_REDIRECT_URIS', '').split(';') if uri.strip()
-]
+WEBUI_APP_REDIRECT_URIS = [uri.strip() for uri in os.getenv('WEBUI_APP_REDIRECT_URIS', '').split(';') if uri.strip()]
 
 ####################################
 # SCIM Configuration

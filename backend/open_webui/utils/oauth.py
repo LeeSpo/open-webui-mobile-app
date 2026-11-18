@@ -197,6 +197,7 @@ def _consume_app_redirect(request) -> str | None:
         return None
     return uri if is_allowed_app_redirect(uri) else None
 
+
 OAUTH_RUNTIME_CONFIG = {
     'DEFAULT_USER_ROLE': ('ui.default_user_role', DEFAULT_USER_ROLE),
     'ENABLE_OAUTH': ('oauth.enable', ENABLE_OAUTH),
@@ -2298,10 +2299,6 @@ class OAuthManager(OAuthSessionRefresher):
                 redirect_url = f'{redirect_url}?error={urllib.parse.quote_plus(error_message)}'
             return RedirectResponse(url=redirect_url, headers=response.headers)
 
-        if app_redirect:
-            # Query string survives Android intent delivery better than a URL fragment.
-            redirect_url = f'{app_redirect}?token={urllib.parse.quote(jwt_token)}'
-
         response = RedirectResponse(url=redirect_url, headers=response.headers)
 
         # Compute cookie expiry from JWT lifetime
@@ -2365,6 +2362,9 @@ class OAuthManager(OAuthSessionRefresher):
                 )
                 response.headers['location'] = f'{redirect_url}?mfa=1'
         else:
+            if app_redirect:
+                # Only return a token after the upstream sign-in/MFA checks succeed.
+                response.headers['location'] = f'{app_redirect}?token={urllib.parse.quote(result["token"])}'
             response.set_cookie(
                 'token',
                 result['token'],
