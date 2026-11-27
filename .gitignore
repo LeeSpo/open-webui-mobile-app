@@ -328,3 +328,4 @@ cypress/screenshots
 
 # Local temporary fixtures and screenshots
 /tmp/
+/artifacts/
